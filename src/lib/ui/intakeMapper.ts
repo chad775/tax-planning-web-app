@@ -1,0 +1,64 @@
+// src/lib/ui/intakeMapper.ts
+import { NormalizedIntakeSchema, type NormalizedIntake2025 } from "../../contracts";
+import type { UiIntakeFormState } from "./types";
+
+export type IntakeMapperOk = { ok: true; intake: NormalizedIntake2025 };
+export type IntakeMapperErr = {
+  ok: false;
+  issues: Array<{ path: string; message: string }>;
+};
+
+export function mapUiToNormalizedIntake(
+  ui: UiIntakeFormState
+): IntakeMapperOk | IntakeMapperErr {
+  const candidate: unknown = {
+    personal: {
+      filing_status: ui.filingStatus,
+      children_0_17: toInt(ui.numChildren),
+      income_excl_business: toMoney(ui.grossIncome),
+      state: normalizeState(ui.state),
+    },
+
+    business: {
+      has_business: !!ui.hasBusiness,
+      type: ui.hasBusiness ? ui.businessType : null,
+      net_income: ui.hasBusiness ? toMoney(ui.businessNetIncome) : 0,
+      num_employees: ui.hasBusiness ? toInt(ui.numEmployees) : 0,
+    },
+
+    // If your contract makes these required, adjust here after updating the contract.
+    retirement: {},
+    strategies_in_use: ui.strategiesInUse ?? [],
+  };
+
+  const parsed = NormalizedIntakeSchema.safeParse(candidate);
+  if (parsed.success) return { ok: true, intake: parsed.data as NormalizedIntake2025 };
+
+  return {
+    ok: false,
+    issues: parsed.error.issues.map((i) => ({
+      path: i.path.join("."),
+      message: i.message,
+    })),
+  };
+}
+
+function normalizeState(v: unknown): string {
+  return String(v ?? "").trim().toUpperCase();
+}
+
+function toInt(v: unknown): number {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  const n = Number(String(v ?? "").replace(/[,_\s]/g, ""));
+  return Number.isFinite(n) ? Math.trunc(n) : 0;
+}
+
+function toMoney(v: unknown): number {
+  if (typeof v === "number" && Number.isFinite(v)) return n2(v);
+  const n = Number(String(v ?? "").replace(/[$,_\s]/g, "").trim());
+  return Number.isFinite(n) ? n2(n) : 0;
+}
+
+function n2(n: number): number {
+  return Math.round(n * 100) / 100;
+}

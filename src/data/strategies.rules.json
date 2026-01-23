@@ -1,0 +1,10 @@
+{
+  "rules": [
+    {
+      "id": "rule-1",
+      "description": "Stage 1 rules table placeholder",
+      "condition": {},
+      "action": {}
+    }
+  ]
+}

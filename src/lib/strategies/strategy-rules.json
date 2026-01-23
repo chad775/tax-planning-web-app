@@ -1,0 +1,194 @@
+{
+    "version": "2026-01-21",
+    "rules": [
+      {
+        "strategy_id": "augusta_loophole",
+        "rule_group": "g1",
+        "field": "business.has_business",
+        "op": "eq",
+        "value": true,
+        "required": true,
+        "description": "Must have a business"
+      },
+      {
+        "strategy_id": "augusta_loophole",
+        "rule_group": "g1",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Must have available net income (positive business profit)"
+      },
+      {
+        "strategy_id": "augusta_loophole",
+        "rule_group": "g1",
+        "field": "business.entity_type",
+        "op": "in",
+        "value": ["sole_prop", "partnership", "s_corp"],
+        "required": true,
+        "description": "Entity type must be sole_prop, partnership, or s_corp"
+      },
+  
+      {
+        "strategy_id": "medical_reimbursement",
+        "rule_group": "g1",
+        "field": "business.has_business",
+        "op": "eq",
+        "value": true,
+        "required": true,
+        "description": "Must have a business"
+      },
+      {
+        "strategy_id": "medical_reimbursement",
+        "rule_group": "g1",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Business net profit must be positive (available net income)"
+      },
+  
+      {
+        "strategy_id": "hiring_children",
+        "rule_group": "g1",
+        "field": "business.has_business",
+        "op": "eq",
+        "value": true,
+        "required": true,
+        "description": "Must have a business"
+      },
+      {
+        "strategy_id": "hiring_children",
+        "rule_group": "g1",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Must have available net income (positive business profit)"
+      },
+  
+      {
+        "strategy_id": "cash_balance_plan",
+        "rule_group": "g1",
+        "field": "business.has_business",
+        "op": "eq",
+        "value": true,
+        "required": true,
+        "description": "Must have a business"
+      },
+      {
+        "strategy_id": "cash_balance_plan",
+        "rule_group": "g1",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Must have available net income (positive business profit)"
+      },
+      {
+        "strategy_id": "cash_balance_plan",
+        "rule_group": "g1",
+        "field": "business.employees_count",
+        "op": "lte",
+        "value": 5,
+        "required": true,
+        "description": "Employees count must be 5 or fewer"
+      },
+  
+      {
+        "strategy_id": "k401",
+        "rule_group": "g1",
+        "field": "business.has_business",
+        "op": "eq",
+        "value": true,
+        "required": true,
+        "description": "Must have a business"
+      },
+      {
+        "strategy_id": "k401",
+        "rule_group": "g1",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Must have available net income (positive business profit)"
+      },
+  
+      {
+        "strategy_id": "leveraged_charitable",
+        "rule_group": "g1",
+        "field": "personal.income_excl_business",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Positive non-business income (proxy for positive total income)"
+      },
+      {
+        "strategy_id": "leveraged_charitable",
+        "rule_group": "g2",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Positive business net profit (alternate proxy for positive total income)"
+      },
+  
+      {
+        "strategy_id": "short_term_rental",
+        "rule_group": "g1",
+        "field": "personal.income_excl_business",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Positive non-business income (proxy for positive total income)"
+      },
+      {
+        "strategy_id": "short_term_rental",
+        "rule_group": "g2",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Positive business net profit (alternate proxy for positive total income)"
+      },
+  
+      {
+        "strategy_id": "rtu_program",
+        "rule_group": "g1",
+        "field": "personal.income_excl_business",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Positive non-business income (proxy for positive total income)"
+      },
+      {
+        "strategy_id": "rtu_program",
+        "rule_group": "g2",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Positive business net profit (alternate proxy for positive total income)"
+      },
+  
+      {
+        "strategy_id": "film_credits",
+        "rule_group": "g1",
+        "field": "personal.income_excl_business",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Positive non-business income (proxy for positive total income)"
+      },
+      {
+        "strategy_id": "film_credits",
+        "rule_group": "g2",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Positive business net profit (alternate proxy for positive total income)"
+      }
+    ]
+  }
+  
