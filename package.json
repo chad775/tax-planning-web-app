@@ -7,19 +7,22 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest"
   },
   "dependencies": {
-    "next": "^16.1.4",
+    "next": "^15.1.0",
     "openai": "^6.16.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
     "zod": "^4.3.5"
   },
   "devDependencies": {
-    "@types/node": "^25.0.9",
-    "@types/react": "19.2.9",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.17"
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0"
   }
 }
