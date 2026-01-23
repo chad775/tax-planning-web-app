@@ -101,7 +101,7 @@ function hybrid(topRate: number, note?: string): StateRateStructure {
     threshold: 300_000,
     rateAt300k: byStatusAll(topRate), // conservative default for launch
     topRate: byStatusAll(topRate),
-    note,
+    ...(note ? { note } : {}),
   };
 }
 
@@ -178,5 +178,7 @@ export const STATE_RATES_2025: StateRateTable = {
  */
 export function asStateCode(state: string): StateCode | null {
   const s = (state || "").trim().toUpperCase();
-  return (s.length === 2 || s === "DC") && (s as StateCode) in STATE_RATES_2025 ? (s as StateCode) : null;
+  return (s.length === 2 || s === "DC") && (s as StateCode) in STATE_RATES_2025
+    ? (s as StateCode)
+    : null;
 }

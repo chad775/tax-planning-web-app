@@ -15,7 +15,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "target": "ESNext",
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "moduleDetection": "force",
     /* =========================
         Interop / Compatibility

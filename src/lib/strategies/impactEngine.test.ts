@@ -1,4 +1,4 @@
-// /src/lib/strategies/impactEngine.test.ts
+// src/lib/strategies/impactEngine.test.ts
 //
 // Simple deterministic test harness (no test framework required).
 // Run with: `ts-node` (or your Next.js/TS runner) as appropriate.
@@ -47,13 +47,22 @@ function buildBaseIntake(args: {
   };
 }
 
-function buildEvaluations(statusById: Record<string, "ELIGIBLE" | "POTENTIAL" | "NOT_ELIGIBLE">): StrategyEvaluationResult[] {
-  return Object.entries(statusById).map(([strategyId, status]) => ({
-    strategyId,
-    status,
-    reasons: [],
-    missingFields: status === "POTENTIAL" ? ["(placeholder)"] : undefined,
-  }));
+function buildEvaluations(
+  statusById: Record<string, "ELIGIBLE" | "POTENTIAL" | "NOT_ELIGIBLE">,
+): StrategyEvaluationResult[] {
+  return Object.entries(statusById).map(([strategyId, status]) => {
+    const missingFields = status === "POTENTIAL" ? (["(placeholder)"] as const) : undefined;
+
+    // exactOptionalPropertyTypes: do NOT set missingFields: undefined.
+    const base: StrategyEvaluationResult = {
+      strategyId,
+      status,
+      reasons: [],
+      ...(missingFields ? { missingFields: missingFields as unknown as readonly string[] } : {}),
+    };
+
+    return base;
+  });
 }
 
 /**
@@ -143,7 +152,6 @@ function main(): void {
     );
     assert((byId.get("FILM_CREDIT")?.flags ?? []).includes("APPLIED") === false, "Film must not be applied below 500k");
 
-    // Ensure taxable income didn't go below 0
     assert(out.revisedTotals.revised.taxableIncome >= 0, "Taxable income must stay >= 0");
   }
 
@@ -260,10 +268,12 @@ function main(): void {
     const byIdNo = new Map(outNoApply.impacts.map((i) => [i.strategyId, i]));
     const byIdYes = new Map(outApply.impacts.map((i) => [i.strategyId, i]));
 
-    assert((byIdNo.get("401K")?.flags ?? []).includes("APPLIED") === false, "401K POTENTIAL must not apply when applyPotential=false");
+    assert(
+      (byIdNo.get("401K")?.flags ?? []).includes("APPLIED") === false,
+      "401K POTENTIAL must not apply when applyPotential=false",
+    );
     assert((byIdYes.get("401K")?.flags ?? []).includes("APPLIED"), "401K POTENTIAL should apply when applyPotential=true");
 
-    // Revised taxable income should differ when potential is applied (unless clamped to 0 impact)
     const tiNo = outNoApply.revisedTotals.revised.taxableIncome;
     const tiYes = outApply.revisedTotals.revised.taxableIncome;
     assert(tiYes <= tiNo || approxEqual(tiYes, tiNo), "Applying potential should not increase taxable income");

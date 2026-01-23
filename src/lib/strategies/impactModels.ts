@@ -90,10 +90,9 @@ function withAlreadyInUseFlag(
   // Conservative: if already in use, default to zero incremental impact.
   const flags: ImpactFlag[] = [...(estimate.flags ?? []), "ALREADY_IN_USE"];
 
-  return {
+  // Build a base object WITHOUT setting optional fields to undefined.
+  const base: Omit<StrategyImpactEstimate, "strategyId" | "status"> = {
     ...estimate,
-    taxableIncomeDelta: estimate.taxableIncomeDelta ? makeRange3(0, 0, 0) : undefined,
-    taxLiabilityDelta: estimate.taxLiabilityDelta ? makeRange3(0, 0, 0) : undefined,
     flags,
     assumptions: [
       ...estimate.assumptions,
@@ -104,6 +103,17 @@ function withAlreadyInUseFlag(
       },
     ],
   };
+
+  // If the property exists, keep it but zero it. If it doesn't exist, omit it.
+  const withIncome = estimate.taxableIncomeDelta
+    ? { ...base, taxableIncomeDelta: makeRange3(0, 0, 0) }
+    : base;
+
+  const withTax = estimate.taxLiabilityDelta
+    ? { ...withIncome, taxLiabilityDelta: makeRange3(0, 0, 0) }
+    : withIncome;
+
+  return withTax;
 }
 
 /* ----------------------------- model: unknown ----------------------------- */
@@ -182,14 +192,6 @@ export const k401EmployeeDeferralModel: ImpactModel = {
 
 /* ----------------------------- model: augusta ------------------------------ */
 
-/**
- * User-provided assumptions:
- * - Max 14 days at $950/day.
- * Conservative range chosen:
- * - low: 0 days (no usable events / insufficient substantiation)
- * - base: 10 days
- * - high: 14 days (max)
- */
 export const augustaModel: ImpactModel = {
   kind: "deduction_range",
   estimate: (ctx: ImpactModelContext) => {
@@ -240,11 +242,6 @@ export const augustaModel: ImpactModel = {
 
 /* -------------------------- model: medical reimb --------------------------- */
 
-/**
- * User-provided assumption:
- * - $1,500–$2,500 per month in medical expenses (annualized).
- * Conservative base: $2,000/month.
- */
 export const medicalReimbursementModel: ImpactModel = {
   kind: "deduction_range",
   estimate: (ctx: ImpactModelContext) => {
@@ -291,13 +288,6 @@ export const medicalReimbursementModel: ImpactModel = {
 
 /* ------------------------- model: cash balance plan ------------------------ */
 
-/**
- * User-provided assumption:
- * - Additional $50,000–$150,000 contribution.
- * Conservative base: $100,000.
- *
- * Treated as deferral_range (reduces current-year taxable income estimate).
- */
 export const cashBalancePlanModel: ImpactModel = {
   kind: "deferral_range",
   estimate: (ctx: ImpactModelContext) => {
@@ -344,14 +334,6 @@ export const cashBalancePlanModel: ImpactModel = {
 
 /* -------------------------- model: hiring children ------------------------- */
 
-/**
- * User-updated per-child ranges:
- * - low: 1,000
- * - base: 6,000
- * - high: 15,000
- *
- * Locked inputs do not include wages/hours/substantiation, so needsConfirmation stays true.
- */
 export const hiringChildrenModel: ImpactModel = {
   kind: "deduction_range",
   estimate: (ctx: ImpactModelContext) => {
@@ -421,28 +403,20 @@ export const hiringChildrenModel: ImpactModel = {
 
 /* ------------------------ model: leveraged charity ------------------------- */
 
-/**
- * User-provided mechanics:
- * - 5x to 1 charitable deduction up to 30% of AGI.
- * - Minimum $50k investment => $250k deduction (base/high).
- * - Only begins to work in income above $833k (income gate handled in impactEngine.ts).
- * - Must compute tax savings against cost (flag only; deterministic ROI not in v1).
- */
 export const leveragedCharitableModel: ImpactModel = {
   kind: "deduction_range",
   estimate: (ctx: ImpactModelContext) => {
     const investmentMin = 50_000;
     const multiplier = 5;
-    const rawDeduction = investmentMin * multiplier; // 250,000
+    const rawDeduction = investmentMin * multiplier;
 
-    // Cap at 30% of AGI proxy (baseline taxable income)
     const low = 0;
     const base = capAmountByPctOfAgiProxy({
       amount: rawDeduction,
       agiProxy: ctx.baseline.taxableIncome,
       pct: 0.30,
     });
-    const high = base; // fixed investment in v1
+    const high = base;
 
     const rawDelta = makeRange3(-low, -base, -high);
     const cappedDelta = clampTaxableIncomeDeltaToBaseline(ctx.baseline.taxableIncome, rawDelta);
@@ -483,12 +457,6 @@ export const leveragedCharitableModel: ImpactModel = {
 
 /* -------------------------- model: short-term rental ----------------------- */
 
-/**
- * User-provided assumption:
- * - Average home price $1,000,000
- * - Cost segregation yields year-1 deduction of 18%–26% of purchase price
- * Conservative base: 22%
- */
 export const shortTermRentalModel: ImpactModel = {
   kind: "deduction_range",
   estimate: (ctx: ImpactModelContext) => {
@@ -541,14 +509,6 @@ export const shortTermRentalModel: ImpactModel = {
 
 /* ------------------------------- model: RTU ------------------------------- */
 
-/**
- * User-provided mechanics:
- * - 6x to 1
- * - Up to 100% of AGI
- * - Invest $50k => $350k deduction
- * - Only works on income above $350k (income gate handled in impactEngine.ts)
- * - Must compute tax savings against cost (flag only; deterministic ROI not in v1)
- */
 export const rtuProgramModel: ImpactModel = {
   kind: "deduction_range",
   estimate: (ctx: ImpactModelContext) => {
@@ -602,13 +562,6 @@ export const rtuProgramModel: ImpactModel = {
 
 /* ------------------------------ model: film ------------------------------- */
 
-/**
- * User-provided mechanics:
- * - 4.5x1 to 5.2x1 deduction
- * - Deduction up to 100% AGI
- * - Minimum investment $100k
- * - Needs income > $500k (income gate handled in impactEngine.ts)
- */
 export const filmCreditsModel: ImpactModel = {
   kind: "deduction_range",
   estimate: (ctx: ImpactModelContext) => {
@@ -667,22 +620,12 @@ export const filmCreditsModel: ImpactModel = {
 
 /* --------------------------- registry + resolver --------------------------- */
 
-/**
- * StrategyId → ImpactModel registry.
- * Strategy ids must match those used in strategy.rules.json.
- * Unknown strategy ids fall back to unknown_range.
- */
 const REGISTRY: Readonly<Record<StrategyId, ImpactModel>> = {
-  // Level 1
   AUGUSTA: augustaModel,
   HIRING_CHILDREN: hiringChildrenModel,
   MEDICAL_REIMBURSEMENT: medicalReimbursementModel,
-
-  // Level 2
   "401K": k401EmployeeDeferralModel,
   SHORT_TERM_RENTAL: shortTermRentalModel,
-
-  // Level 3
   CASH_BALANCE_PLAN: cashBalancePlanModel,
   RTU_PROGRAM: rtuProgramModel,
   LEVERAGED_CHARITABLE: leveragedCharitableModel,
