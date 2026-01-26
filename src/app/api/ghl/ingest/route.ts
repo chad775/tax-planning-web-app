@@ -1,3 +1,5 @@
+// src/app/api/ghl/ingest/route.ts
+
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import {
@@ -35,6 +37,11 @@ function isPlainObject(v: unknown): v is Record<string, any> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
+function isLogOnlyEnabled(): boolean {
+  const v = (process.env.GHL_LOG_ONLY ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 export async function POST(req: Request) {
   try {
     const secret = req.headers.get("X-Webhook-Secret");
@@ -46,16 +53,33 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => null)) as IngestPayload | null;
     if (!body || typeof body.email !== "string" || !isPlainObject(body.analysis)) {
-      return json(500, { ok: false, error: "EMAIL_SEND_FAILED" });
+      // Keep the error code stable for callers (GHL / internal), but return 400 not 500.
+      return json(400, { ok: false, error: "INVALID_PAYLOAD" });
     }
 
     const email = normalizeEmail(body.email);
     const analysis = body.analysis;
 
+    // Idempotency marker (computed even in log-only mode)
+    const idHash = sha256Hex(`${email}|${JSON.stringify(analysis)}`);
+    const markerTag = `taxapp_sent_${idHash.slice(0, 16)}`;
+
+    // LOG ONLY: validate/auth/idempotency marker calculation, but no external side effects.
+    if (isLogOnlyEnabled()) {
+      console.log("[GHL][LOG_ONLY] ingest accepted", {
+        email,
+        markerTag,
+        tags: Array.isArray(body.tags) ? body.tags : [],
+        hasFirstName: typeof body.firstName === "string" && body.firstName.trim().length > 0,
+        hasPhone: typeof body.phone === "string" && body.phone.trim().length > 0,
+        analysisKeys: Object.keys(analysis ?? {}).slice(0, 50),
+      });
+      return json(200, { ok: true, logOnly: true });
+    }
+
     const apiKey = process.env.GHL_API_KEY;
     const locationId = process.env.GHL_LOCATION_ID || "7uY97QKanoXhxDGNwDIa";
-    const baseUrl =
-      process.env.GHL_BASE_URL || "https://services.leadconnectorhq.com";
+    const baseUrl = process.env.GHL_BASE_URL || "https://services.leadconnectorhq.com";
 
     if (!apiKey) {
       console.error("[GHL] Missing GHL_API_KEY");
@@ -68,10 +92,6 @@ export async function POST(req: Request) {
       baseUrl,
       version: "2021-07-28",
     });
-
-    // Idempotency marker
-    const idHash = sha256Hex(`${email}|${JSON.stringify(analysis)}`);
-    const markerTag = `taxapp_sent_${idHash.slice(0, 16)}`;
 
     /* -------------------------------------------------
        1) Upsert contact
@@ -97,15 +117,12 @@ export async function POST(req: Request) {
 
     const contactId = extractContactIdFromUpsertResponse(upsertResp);
     if (!contactId) {
-      console.error(
-        "[GHL] Failed to extract contactId. Response:",
-        upsertResp
-      );
+      console.error("[GHL] Failed to extract contactId. Response:", upsertResp);
       return json(500, { ok: false, error: "EMAIL_SEND_FAILED" });
     }
 
     /* -------------------------------------------------
-       2) Idempotency check
+       2) Idempotency check (skip duplicate sends)
        ------------------------------------------------- */
     let existingTags: string[] = [];
     try {
@@ -143,19 +160,17 @@ export async function POST(req: Request) {
     }
 
     /* -------------------------------------------------
-       5) Add tags
+       5) Add tags (non-fatal)
        ------------------------------------------------- */
     const tagsToAdd = Array.from(
       new Set(
         [
-          ...(Array.isArray(body.tags)
-            ? body.tags.filter((t) => typeof t === "string")
-            : []),
+          ...(Array.isArray(body.tags) ? body.tags.filter((t) => typeof t === "string") : []),
           markerTag,
         ]
           .map((t) => t.trim())
-          .filter(Boolean)
-      )
+          .filter(Boolean),
+      ),
     );
 
     if (tagsToAdd.length) {
