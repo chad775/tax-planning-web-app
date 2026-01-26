@@ -19,6 +19,9 @@ type IngestPayload = {
   firstName?: string;
   phone?: string;
   tags?: string[];
+
+  /** Optional: bypass idempotency if true */
+  forceResend?: boolean;
 };
 
 function json(status: number, body: any) {
@@ -37,9 +40,18 @@ function isPlainObject(v: unknown): v is Record<string, any> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
+function parseTruthyEnvFlag(v: string | undefined): boolean {
+  const s = (v ?? "").trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
+}
+
 function isLogOnlyEnabled(): boolean {
-  const v = (process.env.GHL_LOG_ONLY ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
+  return parseTruthyEnvFlag(process.env.GHL_LOG_ONLY);
+}
+
+function parseTruthyHeader(v: string | null): boolean {
+  const s = (v ?? "").trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
 export async function POST(req: Request) {
@@ -53,7 +65,6 @@ export async function POST(req: Request) {
 
     const body = (await req.json().catch(() => null)) as IngestPayload | null;
     if (!body || typeof body.email !== "string" || !isPlainObject(body.analysis)) {
-      // Keep the error code stable for callers (GHL / internal), but return 400 not 500.
       return json(400, { ok: false, error: "INVALID_PAYLOAD" });
     }
 
@@ -64,11 +75,16 @@ export async function POST(req: Request) {
     const idHash = sha256Hex(`${email}|${JSON.stringify(analysis)}`);
     const markerTag = `taxapp_sent_${idHash.slice(0, 16)}`;
 
+    // Resend override (header OR body)
+    const forceResend =
+      parseTruthyHeader(req.headers.get("X-Force-Resend")) || body.forceResend === true;
+
     // LOG ONLY: validate/auth/idempotency marker calculation, but no external side effects.
     if (isLogOnlyEnabled()) {
       console.log("[GHL][LOG_ONLY] ingest accepted", {
         email,
         markerTag,
+        forceResend,
         tags: Array.isArray(body.tags) ? body.tags : [],
         hasFirstName: typeof body.firstName === "string" && body.firstName.trim().length > 0,
         hasPhone: typeof body.phone === "string" && body.phone.trim().length > 0,
@@ -107,10 +123,7 @@ export async function POST(req: Request) {
     } catch (e) {
       console.error("[GHL] upsertContact failed:", e);
       if (e instanceof GhlApiError) {
-        console.error("[GHL] upsertContact status/body:", {
-          status: e.status,
-          body: e.bodyText,
-        });
+        console.error("[GHL] upsertContact status/body:", { status: e.status, body: e.bodyText });
       }
       return json(500, { ok: false, error: "EMAIL_SEND_FAILED" });
     }
@@ -122,7 +135,7 @@ export async function POST(req: Request) {
     }
 
     /* -------------------------------------------------
-       2) Idempotency check (skip duplicate sends)
+       2) Idempotency check (skip duplicate sends unless forceResend)
        ------------------------------------------------- */
     let existingTags: string[] = [];
     try {
@@ -132,7 +145,7 @@ export async function POST(req: Request) {
       console.warn("[GHL] getContact failed (continuing):", e);
     }
 
-    if (existingTags.includes(markerTag)) {
+    if (!forceResend && existingTags.includes(markerTag)) {
       return json(200, { ok: true });
     }
 
@@ -147,14 +160,11 @@ export async function POST(req: Request) {
        ------------------------------------------------- */
     try {
       await ghl.sendEmailToContact({ contactId, subject, html });
-      console.log("[GHL] Email sent to contact:", contactId);
+      console.log("[GHL] Email sent to contact:", contactId, { forceResend });
     } catch (e) {
       console.error("[GHL] sendEmailToContact failed:", e);
       if (e instanceof GhlApiError) {
-        console.error("[GHL] sendEmailToContact status/body:", {
-          status: e.status,
-          body: e.bodyText,
-        });
+        console.error("[GHL] sendEmailToContact status/body:", { status: e.status, body: e.bodyText });
       }
       return json(500, { ok: false, error: "EMAIL_SEND_FAILED" });
     }
@@ -167,6 +177,7 @@ export async function POST(req: Request) {
         [
           ...(Array.isArray(body.tags) ? body.tags.filter((t) => typeof t === "string") : []),
           markerTag,
+          ...(forceResend ? ["taxapp_force_resend"] : []),
         ]
           .map((t) => t.trim())
           .filter(Boolean),
