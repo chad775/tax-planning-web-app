@@ -1,4 +1,4 @@
-// /src/lib/strategies/impactModels.ts
+// src/lib/strategies/impactModels.ts
 
 import type {
   BaselineTaxTotals,
@@ -56,7 +56,6 @@ export function clampTaxableIncomeDeltaToBaseline(
   delta: Range3,
 ): Range3 {
   const cap = Math.max(0, baselineTaxableIncome);
-  // delta values are negative for reductions; minimum allowed is -cap.
   const clampOne = (v: number) => Math.min(0, Math.max(v, -cap));
   return makeRange3(clampOne(delta.low), clampOne(delta.base), clampOne(delta.high));
 }
@@ -90,7 +89,6 @@ function withAlreadyInUseFlag(
   // Conservative: if already in use, default to zero incremental impact.
   const flags: ImpactFlag[] = [...(estimate.flags ?? []), "ALREADY_IN_USE"];
 
-  // Build a base object WITHOUT setting optional fields to undefined.
   const base: Omit<StrategyImpactEstimate, "strategyId" | "status"> = {
     ...estimate,
     flags,
@@ -104,7 +102,6 @@ function withAlreadyInUseFlag(
     ],
   };
 
-  // If the property exists, keep it but zero it. If it doesn't exist, omit it.
   const withIncome = estimate.taxableIncomeDelta
     ? { ...base, taxableIncomeDelta: makeRange3(0, 0, 0) }
     : base;
@@ -358,11 +355,7 @@ export const hiringChildrenModel: ImpactModel = {
     const perChildBase = 6_000;
     const perChildHigh = 15_000;
 
-    const rawDelta = makeRange3(
-      -perChildLow * kids,
-      -perChildBase * kids,
-      -perChildHigh * kids,
-    );
+    const rawDelta = makeRange3(-perChildLow * kids, -perChildBase * kids, -perChildHigh * kids);
     const cappedDelta = clampTaxableIncomeDeltaToBaseline(ctx.baseline.taxableIncome, rawDelta);
 
     const assumptions: ImpactAssumption[] = [
@@ -619,17 +612,25 @@ export const filmCreditsModel: ImpactModel = {
 };
 
 /* --------------------------- registry + resolver --------------------------- */
-
+/**
+ * ✅ CRITICAL FIX:
+ * StrategyId is the LOCKED union of snake_case ids:
+ * augusta_loophole, medical_reimbursement, hiring_children, cash_balance_plan,
+ * k401, leveraged_charitable, short_term_rental, rtu_program, film_credits
+ *
+ * The old REGISTRY keys (AUGUSTA, "401K", FILM_CREDIT...) will never match,
+ * causing UNMAPPED_STRATEGY_ID for everything.
+ */
 const REGISTRY: Readonly<Record<StrategyId, ImpactModel>> = {
-  AUGUSTA: augustaModel,
-  HIRING_CHILDREN: hiringChildrenModel,
-  MEDICAL_REIMBURSEMENT: medicalReimbursementModel,
-  "401K": k401EmployeeDeferralModel,
-  SHORT_TERM_RENTAL: shortTermRentalModel,
-  CASH_BALANCE_PLAN: cashBalancePlanModel,
-  RTU_PROGRAM: rtuProgramModel,
-  LEVERAGED_CHARITABLE: leveragedCharitableModel,
-  FILM_CREDIT: filmCreditsModel,
+  augusta_loophole: augustaModel,
+  medical_reimbursement: medicalReimbursementModel,
+  hiring_children: hiringChildrenModel,
+  cash_balance_plan: cashBalancePlanModel,
+  k401: k401EmployeeDeferralModel,
+  leveraged_charitable: leveragedCharitableModel,
+  short_term_rental: shortTermRentalModel,
+  rtu_program: rtuProgramModel,
+  film_credits: filmCreditsModel,
 } as const;
 
 export function getImpactModel(strategyId: StrategyId): ImpactModel {
