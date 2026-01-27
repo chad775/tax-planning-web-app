@@ -24,13 +24,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing contact.email" }, { status: 400 });
     }
 
+    if (!intake || typeof intake !== "object") {
+      return NextResponse.json({ ok: false, error: "Missing intake object" }, { status: 400 });
+    }
+
     const origin = req.headers.get("origin") ?? mustEnv("APP_ORIGIN");
 
-    // 1) Analyze (server-to-server)
+    // 1) Analyze (server-to-server) — IMPORTANT: analyze expects { intake: ... }
     const analyzeRes = await fetch(`${origin}/api/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(intake),
+      body: JSON.stringify({ intake }),
     });
 
     if (!analyzeRes.ok) {
@@ -68,7 +72,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Return analysis so /results page continues to work as-is
+    // Return analysis so /results page continues to work
     return NextResponse.json(analysisJson);
   } catch (err) {
     return NextResponse.json(
