@@ -4,11 +4,7 @@ import type { NormalizedIntake2025 } from "../../contracts";
 type FilingStatus = NormalizedIntake2025["personal"]["filing_status"];
 type StateCode = NormalizedIntake2025["personal"]["state"];
 
-type BusinessType = NormalizedIntake2025["business"] extends {
-  type: infer T;
-}
-  ? T
-  : never;
+type BusinessType = NormalizedIntake2025["business"] extends { type: infer T } ? T : never;
 
 export type UiIntakeFormState = {
   filingStatus: FilingStatus;
@@ -25,4 +21,9 @@ export type UiIntakeFormState = {
 
   // UI convenience: let user select strategies already in use (optional)
   strategiesInUse?: Array<NormalizedIntake2025["strategies_in_use"][number]>;
+
+  // Contact info (UI-only; used to create/update GHL contact + send email)
+  contactEmail: string;
+  contactFirstName: string;
+  contactPhone: string;
 };

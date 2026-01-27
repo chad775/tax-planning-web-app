@@ -44,6 +44,10 @@ export default function IntakePage() {
     businessNetIncome: "",
     numEmployees: 0,
     strategiesInUse: [],
+
+    contactEmail: "",
+    contactFirstName: "",
+    contactPhone: "",
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -66,27 +70,36 @@ export default function IntakePage() {
       return;
     }
 
+    // Require email to send results
+    if (!mapped.contact.email || !mapped.contact.email.includes("@")) {
+      setFormError("Please enter a valid email address so we can send your analysis.");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const res = await fetch("/api/analyze", {
+      const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mapped.intake),
+        body: JSON.stringify({
+          intake: mapped.intake,
+          contact: mapped.contact,
+        }),
       });
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(text || `Analyze failed (${res.status})`);
+        throw new Error(text || `Submit failed (${res.status})`);
       }
 
       const json: AnalyzeApiResponse = await res.json();
 
-      // Results page renders only what /api/analyze returned.
+      // Results page renders only what /api/submit returned (analysis payload).
       sessionStorage.setItem("latestAnalysis", JSON.stringify(json));
 
       router.push("/results");
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Analyze failed.");
+      setFormError(err instanceof Error ? err.message : "Submit failed.");
     } finally {
       setSubmitting(false);
     }
@@ -135,6 +148,41 @@ export default function IntakePage() {
 
       <form onSubmit={onSubmit} style={{ display: "grid", gap: 16 }}>
         <section style={cardStyle}>
+          <h2 style={h2Style}>Contact</h2>
+
+          <div style={grid2Style}>
+            <Field label="Email" issues={issuesFor("contact.email")}>
+              <input
+                inputMode="email"
+                value={form.contactEmail}
+                onChange={(e) => set("contactEmail", e.target.value)}
+                style={inputStyle}
+                placeholder="you@example.com"
+              />
+            </Field>
+
+            <Field label="First name (optional)" issues={issuesFor("contact.firstName")}>
+              <input
+                value={form.contactFirstName}
+                onChange={(e) => set("contactFirstName", e.target.value)}
+                style={inputStyle}
+                placeholder="Chad"
+              />
+            </Field>
+
+            <Field label="Phone (optional)" issues={issuesFor("contact.phone")}>
+              <input
+                inputMode="tel"
+                value={form.contactPhone}
+                onChange={(e) => set("contactPhone", e.target.value)}
+                style={inputStyle}
+                placeholder="+15555555555"
+              />
+            </Field>
+          </div>
+        </section>
+
+        <section style={cardStyle}>
           <h2 style={h2Style}>Personal</h2>
 
           <div style={grid2Style}>
@@ -176,7 +224,10 @@ export default function IntakePage() {
               />
             </Field>
 
-            <Field label="Gross income (excluding business)" issues={issuesFor("personal.income_excl_business")}>
+            <Field
+              label="Gross income (excluding business)"
+              issues={issuesFor("personal.income_excl_business")}
+            >
               <input
                 inputMode="decimal"
                 value={String(form.grossIncome)}

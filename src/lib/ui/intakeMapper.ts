@@ -2,15 +2,18 @@
 import { NormalizedIntakeSchema, type NormalizedIntake2025 } from "../../contracts";
 import type { UiIntakeFormState } from "./types";
 
-export type IntakeMapperOk = { ok: true; intake: NormalizedIntake2025 };
+export type IntakeMapperOk = {
+  ok: true;
+  intake: NormalizedIntake2025;
+  contact: { email: string; firstName?: string; phone?: string };
+};
+
 export type IntakeMapperErr = {
   ok: false;
   issues: Array<{ path: string; message: string }>;
 };
 
-export function mapUiToNormalizedIntake(
-  ui: UiIntakeFormState
-): IntakeMapperOk | IntakeMapperErr {
+export function mapUiToNormalizedIntake(ui: UiIntakeFormState): IntakeMapperOk | IntakeMapperErr {
   const candidate: unknown = {
     personal: {
       filing_status: ui.filingStatus,
@@ -26,13 +29,20 @@ export function mapUiToNormalizedIntake(
       num_employees: ui.hasBusiness ? toInt(ui.numEmployees) : 0,
     },
 
-    // If your contract makes these required, adjust here after updating the contract.
+    // Required by contract (empty objects are OK if schema allows)
     retirement: {},
     strategies_in_use: ui.strategiesInUse ?? [],
   };
 
   const parsed = NormalizedIntakeSchema.safeParse(candidate);
-  if (parsed.success) return { ok: true, intake: parsed.data as NormalizedIntake2025 };
+
+  if (parsed.success) {
+    return {
+      ok: true,
+      intake: parsed.data as NormalizedIntake2025,
+      contact: buildContact(ui),
+    };
+  }
 
   return {
     ok: false,
@@ -40,6 +50,22 @@ export function mapUiToNormalizedIntake(
       path: i.path.join("."),
       message: i.message,
     })),
+  };
+}
+
+/* ---------------- helpers ---------------- */
+
+function buildContact(
+  ui: UiIntakeFormState
+): { email: string; firstName?: string; phone?: string } {
+  const email = String(ui.contactEmail ?? "").trim();
+  const firstName = String(ui.contactFirstName ?? "").trim();
+  const phone = String(ui.contactPhone ?? "").trim();
+
+  return {
+    email,
+    ...(firstName ? { firstName } : {}),
+    ...(phone ? { phone } : {}),
   };
 }
 

@@ -37,6 +37,50 @@ function formatUsd(n: number): string {
   }
 }
 
+/**
+ * Display tax impact in a more client-friendly way:
+ * - negative delta => savings
+ * - positive delta => increases tax
+ */
+function formatTaxImpact(delta: number): { label: string; value: string } {
+  if (delta < 0) return { label: "Estimated savings", value: formatUsd(Math.abs(delta)) };
+  if (delta > 0) return { label: "Estimated increase", value: formatUsd(delta) };
+  return { label: "Estimated impact", value: formatUsd(0) };
+}
+
+function truncate(s: string, maxChars: number): { text: string; truncated: boolean } {
+  if (s.length <= maxChars) return { text: s, truncated: false };
+  return { text: s.slice(0, maxChars) + "\n…(truncated)", truncated: true };
+}
+
+function normalizeStatus(raw: unknown): string {
+  const s = asString(raw);
+  if (!s) return "";
+  return s.toUpperCase();
+}
+
+function isAppliedStatus(status: string): boolean {
+  // handle your contract statuses + common variants
+  // APPLIED / ALREADY_IN_USE = "applied-like"
+  return (
+    status === "APPLIED" ||
+    status === "ALREADY_IN_USE" ||
+    status === "IN_USE" ||
+    status === "USED" ||
+    status === "ACTIVE"
+  );
+}
+
+function isPotentialStatus(status: string): boolean {
+  // NOT_APPLIED_POTENTIAL is the main one in your contracts
+  return (
+    status === "NOT_APPLIED_POTENTIAL" ||
+    status === "POTENTIAL" ||
+    status === "ELIGIBLE" ||
+    status === "RECOMMENDED"
+  );
+}
+
 export function buildEmailSubject(email: string, analysis: Json): string {
   const state =
     asString(get(analysis, "intake.personal.state")) ??
@@ -83,8 +127,7 @@ export function buildEmailHtml(analysis: Json): string {
     get(analysis, "business.hasBusiness");
 
   const bizType =
-    asString(get(analysis, "intake.business.type")) ??
-    asString(get(analysis, "business.type"));
+    asString(get(analysis, "intake.business.type")) ?? asString(get(analysis, "business.type"));
 
   const bizNetIncome =
     safeNumber(get(analysis, "intake.business.net_income")) ??
@@ -109,7 +152,9 @@ export function buildEmailHtml(analysis: Json): string {
     safeNumber(get(analysis, "result.total_tax")) ??
     null;
 
-  const delta =
+  // NOTE: delta could be "after - baseline" (negative = savings) OR a "savings" positive number
+  // We display it with best-effort formatting:
+  const deltaRaw =
     safeNumber(get(analysis, "delta.total_tax")) ??
     safeNumber(get(analysis, "delta.tax")) ??
     safeNumber(get(analysis, "savings.total_tax")) ??
@@ -126,28 +171,54 @@ export function buildEmailHtml(analysis: Json): string {
   const taxRows: Array<[string, string]> = [];
   if (baselineTax != null) taxRows.push(["Baseline total tax", formatUsd(baselineTax)]);
   if (afterTax != null) taxRows.push(["After strategies total tax", formatUsd(afterTax)]);
-  if (delta != null) taxRows.push(["Estimated change", formatUsd(delta)]);
+  if (deltaRaw != null) {
+    // If this field is actually a "savings" positive number, it will label as increase.
+    // But in most pipelines delta is "after - baseline". Keeping best-effort:
+    const { label, value } = formatTaxImpact(deltaRaw);
+    taxRows.push([label, value]);
+  }
 
-  const strategiesHtml = renderStrategiesSection(strategies);
+  const strategiesBlock = renderStrategiesAndTopOpportunities(strategies);
 
-  const rawJson = escapeHtml(JSON.stringify(analysis, null, 2));
+  const rawJson = JSON.stringify(analysis, null, 2) ?? "";
+  const { text: rawJsonTrunc, truncated } = truncate(rawJson, 12000);
+  const rawJsonEsc = escapeHtml(rawJsonTrunc);
 
   return `
-<div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.4;">
-  <h2 style="margin:0 0 12px 0;">Tax Planning Analysis</h2>
+<div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.45; color:#111;">
+  <div style="max-width: 760px; margin: 0 auto; padding: 10px 0;">
+    <h2 style="margin:0 0 10px 0;">Tax Planning Analysis</h2>
 
-  ${intakeRows.length ? renderKeyValueTable("Intake Summary", intakeRows) : ""}
+    <p style="margin:0 0 14px 0; color:#333;">
+      Below is a summary of the key inputs, estimated results, and the biggest opportunities identified.
+    </p>
 
-  ${taxRows.length ? renderKeyValueTable("High-Level Results (best-effort)", taxRows) : ""}
+    ${intakeRows.length ? renderKeyValueTable("Intake Summary", intakeRows) : ""}
 
-  ${strategiesHtml}
+    ${taxRows.length ? renderKeyValueTable("High-Level Results (best-effort)", taxRows) : ""}
 
-  <h3 style="margin:18px 0 8px 0;">Raw Analysis (as received)</h3>
-  <pre style="background:#f6f8fa; padding:12px; border-radius:6px; overflow:auto; white-space:pre-wrap;">${rawJson}</pre>
+    ${strategiesBlock}
 
-  <p style="margin-top:16px; color:#666; font-size:12px;">
-    This email is generated automatically. Figures are shown only if present in the payload; no numbers are recomputed.
-  </p>
+    <h3 style="margin:18px 0 8px 0;">Next Steps</h3>
+    <ul style="margin:0 0 14px 0; padding-left:18px;">
+      <li>Reply with any missing details (entity type, payroll, retirement contributions, expenses).</li>
+      <li>If you want, we can rerun a refined version using updated inputs.</li>
+    </ul>
+
+    <h3 style="margin:18px 0 8px 0;">Raw Analysis (as received)</h3>
+    <pre style="background:#f6f8fa; padding:12px; border-radius:8px; overflow:auto; white-space:pre-wrap; border:1px solid #e5e7eb;">${rawJsonEsc}</pre>
+    ${
+      truncated
+        ? `<p style="margin-top:8px; color:#666; font-size:12px;">
+            Raw analysis was truncated for email length.
+          </p>`
+        : ""
+    }
+
+    <p style="margin-top:16px; color:#666; font-size:12px;">
+      This email is generated automatically. Figures are shown only if present in the payload; no numbers are recomputed.
+    </p>
+  </div>
 </div>
 `.trim();
 }
@@ -157,24 +228,24 @@ function renderKeyValueTable(title: string, rows: Array<[string, string]>): stri
     .map(
       ([k, v]) => `
     <tr>
-      <td style="padding:6px 10px; border:1px solid #ddd; font-weight:bold; background:#fafafa; width:240px;">${escapeHtml(
+      <td style="padding:8px 10px; border:1px solid #ddd; font-weight:bold; background:#fafafa; width:240px;">${escapeHtml(
         k
       )}</td>
-      <td style="padding:6px 10px; border:1px solid #ddd;">${escapeHtml(v)}</td>
+      <td style="padding:8px 10px; border:1px solid #ddd;">${escapeHtml(v)}</td>
     </tr>`
     )
     .join("");
 
   return `
   <h3 style="margin:18px 0 8px 0;">${escapeHtml(title)}</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse; width:100%; max-width:720px;">
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse; width:100%; max-width:760px;">
     ${trs}
   </table>
   `.trim();
 }
 
-function renderStrategiesSection(strategies: any): string {
-  if (!strategies) return "";
+function parseStrategies(strategies: any): any[] {
+  if (!strategies) return [];
 
   // Accept either:
   // - array of impacts [{ id, name, delta, status, ...}]
@@ -185,47 +256,140 @@ function renderStrategiesSection(strategies: any): string {
       ? Object.entries(strategies).map(([id, v]) => ({ id, ...(v as any) }))
       : [];
 
+  return list.filter(Boolean);
+}
+
+function extractStrategyRow(s: any): {
+  id: string;
+  name: string;
+  status: string;
+  delta: number | null;
+} {
+  const id = asString(s.id) ?? asString(s.strategy_id) ?? asString(s.strategyId) ?? "—";
+  const name = asString(s.name) ?? asString(s.title) ?? id;
+
+  const statusRaw = asString(s.status) ?? asString(s.application_status) ?? "";
+  const status = normalizeStatus(statusRaw);
+
+  const delta =
+    safeNumber(s.delta_tax) ??
+    safeNumber(s.deltaTax) ??
+    safeNumber(s.delta) ??
+    safeNumber(s.impact) ??
+    null;
+
+  return { id, name, status, delta };
+}
+
+function renderStrategiesAndTopOpportunities(strategies: any): string {
+  const list = parseStrategies(strategies);
   if (!list.length) return "";
 
-  const rows = list
+  const rows = list.map(extractStrategyRow);
+
+  const applied = rows.filter((r) => isAppliedStatus(r.status));
+  const potential = rows.filter((r) => isPotentialStatus(r.status));
+  const other = rows.filter((r) => !isAppliedStatus(r.status) && !isPotentialStatus(r.status));
+
+  // "Top Opportunities" = biggest estimated savings among potential/other
+  // Savings convention: negative delta => savings (after - baseline)
+  // If delta is positive and actually means savings in your pipeline, we’ll adjust later.
+  const oppCandidates = [...potential, ...other]
+    .filter((r) => typeof r.delta === "number" && Number.isFinite(r.delta))
+    .map((r) => ({
+      ...r,
+      savings: r.delta! < 0 ? Math.abs(r.delta!) : 0,
+      increase: r.delta! > 0 ? r.delta! : 0,
+    }))
+    .sort((a, b) => b.savings - a.savings);
+
+  const topOpps = oppCandidates.filter((x) => x.savings > 0).slice(0, 5);
+
+  const topOppsHtml = topOpps.length
+    ? renderTopOpportunities(topOpps)
+    : `
+      <h3 style="margin:18px 0 8px 0;">Top Opportunities</h3>
+      <p style="margin:0 0 10px 0; color:#444;">
+        No large “potential savings” items were detected from the strategy list in the payload.
+      </p>
+    `.trim();
+
+  const appliedTable = applied.length ? renderStrategyTable("Applied / Already In Use", applied) : "";
+  const potentialTable = potential.length ? renderStrategyTable("Potential", potential) : "";
+  const otherTable = other.length ? renderStrategyTable("Other Strategy Results", other) : "";
+
+  return `
+    ${topOppsHtml}
+    ${appliedTable}
+    ${potentialTable}
+    ${otherTable}
+  `.trim();
+}
+
+function renderTopOpportunities(
+  topOpps: Array<{
+    id: string;
+    name: string;
+    status: string;
+    delta: number | null;
+    savings: number;
+  }>
+): string {
+  const items = topOpps
+    .map((o) => {
+      const impact = formatUsd(o.savings);
+      return `
+        <li style="margin:0 0 6px 0;">
+          <strong>${escapeHtml(o.name)}</strong>
+          <span style="color:#555;">(${escapeHtml(o.id)})</span>
+          — <span style="color:#111;">Estimated savings: <strong>${escapeHtml(impact)}</strong></span>
+        </li>
+      `.trim();
+    })
+    .join("");
+
+  return `
+    <h3 style="margin:18px 0 8px 0;">Top Opportunities</h3>
+    <p style="margin:0 0 10px 0; color:#444;">
+      Based on the strategy list provided, these are the biggest estimated savings opportunities (best-effort).
+    </p>
+    <ul style="margin:0 0 12px 0; padding-left:18px;">
+      ${items}
+    </ul>
+  `.trim();
+}
+
+function renderStrategyTable(title: string, rowsIn: Array<{ id: string; name: string; status: string; delta: number | null }>): string {
+  const rows = rowsIn
     .slice(0, 50)
     .map((s) => {
-      const id = asString(s.id) ?? asString(s.strategy_id) ?? asString(s.strategyId) ?? "—";
-      const name = asString(s.name) ?? asString(s.title) ?? id;
-      const status = asString(s.status) ?? asString(s.application_status) ?? "";
-      const delta =
-        safeNumber(s.delta_tax) ??
-        safeNumber(s.deltaTax) ??
-        safeNumber(s.delta) ??
-        safeNumber(s.impact) ??
-        null;
-
-      const deltaStr = delta == null ? "" : formatUsd(delta);
+      const delta = s.delta;
+      let impactStr = "";
+      if (delta != null) {
+        const { label, value } = formatTaxImpact(delta);
+        impactStr = `${label}: ${value}`;
+      }
 
       return `
         <tr>
-          <td style="padding:6px 10px; border:1px solid #ddd;">${escapeHtml(name)}</td>
-          <td style="padding:6px 10px; border:1px solid #ddd; color:#555;">${escapeHtml(
-            id
-          )}</td>
-          <td style="padding:6px 10px; border:1px solid #ddd;">${escapeHtml(status)}</td>
-          <td style="padding:6px 10px; border:1px solid #ddd; text-align:right;">${escapeHtml(
-            deltaStr
-          )}</td>
+          <td style="padding:8px 10px; border:1px solid #ddd;">${escapeHtml(s.name)}</td>
+          <td style="padding:8px 10px; border:1px solid #ddd; color:#555;">${escapeHtml(s.id)}</td>
+          <td style="padding:8px 10px; border:1px solid #ddd;">${escapeHtml(s.status)}</td>
+          <td style="padding:8px 10px; border:1px solid #ddd; text-align:right;">${escapeHtml(impactStr)}</td>
         </tr>
       `.trim();
     })
     .join("");
 
   return `
-  <h3 style="margin:18px 0 8px 0;">Strategies (best-effort)</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse; width:100%; max-width:720px;">
+  <h3 style="margin:18px 0 8px 0;">${escapeHtml(title)}</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse; width:100%; max-width:760px;">
     <thead>
       <tr>
-        <th style="padding:6px 10px; border:1px solid #ddd; background:#fafafa; text-align:left;">Strategy</th>
-        <th style="padding:6px 10px; border:1px solid #ddd; background:#fafafa; text-align:left;">ID</th>
-        <th style="padding:6px 10px; border:1px solid #ddd; background:#fafafa; text-align:left;">Status</th>
-        <th style="padding:6px 10px; border:1px solid #ddd; background:#fafafa; text-align:right;">Tax impact</th>
+        <th style="padding:8px 10px; border:1px solid #ddd; background:#fafafa; text-align:left;">Strategy</th>
+        <th style="padding:8px 10px; border:1px solid #ddd; background:#fafafa; text-align:left;">ID</th>
+        <th style="padding:8px 10px; border:1px solid #ddd; background:#fafafa; text-align:left;">Status</th>
+        <th style="padding:8px 10px; border:1px solid #ddd; background:#fafafa; text-align:right;">Estimated impact</th>
       </tr>
     </thead>
     <tbody>
