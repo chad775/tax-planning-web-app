@@ -15,7 +15,9 @@ import {
 import { runBaselineTaxEngine } from "../../../lib/tax/baselineEngine";
 import { evaluateStrategies } from "../../../lib/strategies/evaluator";
 import { runImpactEngine } from "../../../lib/strategies/impactEngine";
-import { loadStrategyRulesFromFile } from "../../../lib/strategies/rules";
+
+// ✅ IMPORTANT: import JSON so Next/Vercel bundles it
+import strategyRulesJson from "../../../lib/strategies/strategy-rules.json";
 
 // Import contracts (single source of truth)
 import { NormalizedIntakeSchema, type NormalizedIntake2025 } from "../../../contracts/intake";
@@ -191,8 +193,8 @@ export async function POST(req: Request) {
 
     const intake: NormalizedIntake2025 = parsed.intake;
 
-    // Load rules from JSON file
-    const rules = (await loadStrategyRulesFromFile()) as ContractStrategyRuleRow[];
+    // ✅ Load rules from bundled JSON (no fs / no path issues on Vercel)
+    const rules = strategyRulesJson as unknown as ContractStrategyRuleRow[];
 
     // Run baseline engine
     const baseline: BaselineTaxTotals = await runBaselineTaxEngine(intake);
