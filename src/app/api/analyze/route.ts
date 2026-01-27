@@ -130,16 +130,32 @@ function normalizeNarrativeCandidate(obj: any): any {
 }
 
 /* ------------------------------------------------------------------ */
+/* Impact shape adapter (your engine returns { impacts, revisedTotals }) */
+/* ------------------------------------------------------------------ */
+
+function getImpactParts(impact: ImpactEngineOutput) {
+  const rt = (impact as any)?.revisedTotals;
+  const revised = rt?.revised;
+  const totalTaxDelta = rt?.totalTaxDelta;
+
+  return {
+    revised,
+    totalTaxDelta,
+    impacts: Array.isArray((impact as any)?.impacts) ? (impact as any).impacts : [],
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Build LLM context */
 /* ------------------------------------------------------------------ */
 
 function buildAnalysisContext(args: {
   requestId: string;
   createdAtIso: string;
-  intake: any;
-  baseline: any;
+  intake: NormalizedIntake2025;
+  baseline: BaselineTaxTotals;
   evaluation: any;
-  impact: any;
+  impact: ImpactEngineOutput;
   applyPotential: boolean;
 }): AnalysisContextForLLM {
   const { requestId, createdAtIso, intake, baseline, evaluation, impact, applyPotential } = args;
@@ -161,6 +177,8 @@ function buildAnalysisContext(args: {
     already_in_use: null,
   }));
 
+  const { revised, totalTaxDelta, impacts } = getImpactParts(impact);
+
   return {
     request_id: requestId,
     created_at_iso: createdAtIso,
@@ -173,11 +191,11 @@ function buildAnalysisContext(args: {
     },
 
     baseline: {
-      federal_tax_total: baseline.federalTax,
-      state_tax_total: baseline.stateTax,
-      total_tax: baseline.totalTax,
-      taxable_income_federal: baseline.taxableIncome,
-      taxable_income_state: baseline.taxableIncome,
+      federal_tax_total: (baseline as any).federalTax ?? 0,
+      state_tax_total: (baseline as any).stateTax ?? 0,
+      total_tax: (baseline as any).totalTax ?? 0,
+      taxable_income_federal: (baseline as any).taxableIncome ?? null,
+      taxable_income_state: (baseline as any).taxableIncome ?? null,
       effective_tax_rate_total: null,
     },
 
@@ -186,19 +204,19 @@ function buildAnalysisContext(args: {
     impact_summary: {
       apply_potential: applyPotential,
       revised: {
-        federal_tax_total: impact.revised.federalTax,
-        state_tax_total: impact.revised.stateTax,
-        total_tax: impact.revised.totalTax,
-        taxable_income_federal: impact.revised.taxableIncome,
-        taxable_income_state: impact.revised.taxableIncome,
+        federal_tax_total: revised?.federalTax ?? 0,
+        state_tax_total: revised?.stateTax ?? 0,
+        total_tax: revised?.totalTax ?? 0,
+        taxable_income_federal: revised?.taxableIncome ?? null,
+        taxable_income_state: revised?.taxableIncome ?? null,
         effective_tax_rate_total: null,
       },
       deltas: {
-        total_tax_delta_low: impact.totalTaxDelta.low,
-        total_tax_delta_base: impact.totalTaxDelta.base,
-        total_tax_delta_high: impact.totalTaxDelta.high,
+        total_tax_delta_low: totalTaxDelta?.low ?? 0,
+        total_tax_delta_base: totalTaxDelta?.base ?? 0,
+        total_tax_delta_high: totalTaxDelta?.high ?? 0,
       },
-      per_strategy: impact.impacts,
+      per_strategy: impacts,
     },
 
     brand: {
