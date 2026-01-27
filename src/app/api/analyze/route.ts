@@ -109,12 +109,28 @@ function buildAnalysisContext(args: {
 
   const normalizeStrategyId = (id: unknown) => StrategyIdSchema.parse(id);
 
-  const strategy_evaluation = (evaluation ?? []).map((s: any) => ({
-    strategy_id: normalizeStrategyId(s.strategy_id ?? s.id),
-    status: s.status,
-    reasons: Array.isArray(s.reasons) ? s.reasons : [],
-    already_in_use: s.already_in_use ?? s.alreadyInUse ?? null,
-  }));
+  const evaluationList = Array.isArray(evaluation)
+  ? evaluation
+  : Array.isArray(evaluation?.all)
+    ? evaluation.all
+    : [];
+
+const strategy_evaluation = evaluationList.map((s: any) => ({
+  strategy_id: normalizeStrategyId(s.strategy_id ?? s.id),
+  status: s.status,
+  // Your evaluator returns failedConditions/missingRequired, not "reasons" in this shape
+  reasons: Array.isArray(s.reasons)
+    ? s.reasons
+    : Array.isArray(s.failedConditions)
+      ? s.failedConditions.map((fc: any) => ({
+          code: fc.status,
+          message: fc.message ?? "",
+          field: fc.row?.field ?? null,
+        }))
+      : [],
+  already_in_use: s.already_in_use ?? s.alreadyInUse ?? null,
+}));
+
 
   const per_strategy = (impact?.per_strategy ?? impact?.perStrategy ?? []).map((s: any) => ({
     strategy_id: normalizeStrategyId(s.strategy_id ?? s.id),
