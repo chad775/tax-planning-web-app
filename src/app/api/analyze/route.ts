@@ -16,10 +16,10 @@ import { runBaselineTaxEngine } from "../../../lib/tax/baselineEngine";
 import { evaluateStrategies } from "../../../lib/strategies/evaluator";
 import { runImpactEngine } from "../../../lib/strategies/impactEngine";
 
-// ✅ IMPORTANT: import JSON so Next/Vercel bundles it
+// ✅ Bundled JSON (Vercel-safe)
 import strategyRulesJson from "../../../lib/strategies/strategy-rules.json";
 
-// Import contracts (single source of truth)
+// Contracts (single source of truth)
 import { NormalizedIntakeSchema, type NormalizedIntake2025 } from "../../../contracts/intake";
 import type { EvaluateStrategiesInput, StrategyRuleRow as ContractStrategyRuleRow } from "../../../contracts/evaluator";
 import type { BaselineTaxTotals } from "../../../contracts/baseline";
@@ -27,14 +27,18 @@ import type { ImpactEngineInput, ImpactEngineOutput } from "../../../contracts/i
 
 export const runtime = "nodejs";
 
+/* ---------------- request schema ---------------- */
+
 const AnalyzeRequestSchema = z
   .object({
-    intake: NormalizedIntakeSchema, // Use contract schema
+    intake: NormalizedIntakeSchema,
     applyPotential: z.boolean().optional(),
     model: z.enum(["gpt-4.1", "gpt-4.1-mini"]).optional(),
     requestId: z.string().min(6).optional(),
   })
   .strict();
+
+/* ---------------- utils ---------------- */
 
 function ensureEnv(name: string): string {
   const v = process.env[name];
@@ -61,40 +65,36 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
-/** Derive the public origin for server-to-server calls (Vercel safe). */
-function getOriginFromRequest(req: Request): string {
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  if (!host) throw new Error("Missing host headers; cannot derive origin.");
-  return `${proto}://${host}`;
-}
-
 /**
- * Option A: call GHL ingest directly from the app after analysis is produced.
- * This uses the same shared secret header auth used by GHL.
- *
- * Non-blocking: we fire-and-forget so /api/analyze always returns the analysis,
- * even if outbound email fails or is temporarily unavailable.
+ * Normalize OpenAI output so it always matches strict schema
  */
-async function postToGhlIngest(req: Request, payload: unknown): Promise<void> {
-  const secret = ensureEnv("GHL_WEBHOOK_SECRET");
-  const baseUrl = process.env.APP_BASE_URL ?? getOriginFromRequest(req);
-  const url = `${baseUrl.replace(/\/+$/, "")}/api/ghl/ingest`;
+function normalizeNarrativeCandidate(obj: any): any {
+  if (!obj || typeof obj !== "object") return obj;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Webhook-Secret": secret,
-    },
-    body: JSON.stringify(payload),
-  });
+  if (Array.isArray(obj.strategy_explanations)) {
+    obj.strategy_explanations = obj.strategy_explanations.map((s: any) => {
+      const out: any = { ...(s ?? {}) };
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`ghl/ingest failed: ${res.status} ${text}`);
+      if (typeof out.what_it_is !== "string") {
+        out.what_it_is = "";
+      }
+
+      if (typeof out.why_it_applies_or_not !== "string") {
+        out.why_it_applies_or_not =
+          typeof out.explanation === "string" ? out.explanation : "";
+      }
+
+      delete out.status;
+      delete out.explanation;
+
+      return out;
+    });
   }
+
+  return obj;
 }
+
+/* ---------------- analysis context ---------------- */
 
 function buildAnalysisContext(args: {
   requestId: string;
@@ -109,45 +109,19 @@ function buildAnalysisContext(args: {
 
   const normalizeStrategyId = (id: unknown) => StrategyIdSchema.parse(id);
 
-  const evaluationList = Array.isArray(evaluation)
-  ? evaluation
-  : Array.isArray(evaluation?.all)
-    ? evaluation.all
-    : [];
+  const evaluationList = Array.isArray(evaluation?.all) ? evaluation.all : [];
 
-const strategy_evaluation = evaluationList.map((s: any) => ({
-  strategy_id: normalizeStrategyId(s.strategy_id ?? s.id),
-  status: s.status,
-  // Your evaluator returns failedConditions/missingRequired, not "reasons" in this shape
-  reasons: Array.isArray(s.reasons)
-    ? s.reasons
-    : Array.isArray(s.failedConditions)
+  const strategy_evaluation = evaluationList.map((s: any) => ({
+    strategy_id: normalizeStrategyId(s.strategy_id),
+    status: s.status,
+    reasons: Array.isArray(s.failedConditions)
       ? s.failedConditions.map((fc: any) => ({
           code: fc.status,
           message: fc.message ?? "",
           field: fc.row?.field ?? null,
         }))
       : [],
-  already_in_use: s.already_in_use ?? s.alreadyInUse ?? null,
-}));
-
-
-  const per_strategy = (impact?.per_strategy ?? impact?.perStrategy ?? []).map((s: any) => ({
-    strategy_id: normalizeStrategyId(s.strategy_id ?? s.id),
-    applied: Boolean(s.applied),
-    status: s.status,
-    delta_type: s.delta_type ?? s.deltaType ?? "UNKNOWN",
-    delta_low: s.delta_low ?? s.deltaLow ?? null,
-    delta_base: s.delta_base ?? s.deltaBase ?? null,
-    delta_high: s.delta_high ?? s.deltaHigh ?? null,
-    assumptions: Array.isArray(s.assumptions) ? s.assumptions : [],
-    flags: Array.isArray(s.flags) ? s.flags : null,
-    evaluator_reasons: Array.isArray(s.evaluator_reasons)
-      ? s.evaluator_reasons
-      : Array.isArray(s.evaluatorReasons)
-        ? s.evaluatorReasons
-        : [],
-    already_in_use: s.already_in_use ?? s.alreadyInUse ?? null,
+    already_in_use: null,
   }));
 
   return {
@@ -155,19 +129,21 @@ const strategy_evaluation = evaluationList.map((s: any) => ({
     created_at_iso: createdAtIso,
 
     taxpayer_profile: {
-      filing_status: intake?.personal?.filing_status ?? "",
-      state: intake?.personal?.state ?? "",
-      residency_notes: intake?.personal?.residency_notes ?? null,
-      entity_type: intake?.business?.entity_type ?? null,
+      filing_status: intake.personal.filing_status,
+      state: intake.personal.state,
+      entity_type: intake.business.entity_type,
     },
 
     baseline: {
-      federal_tax_total: baseline?.federal_tax_total ?? baseline?.federalTaxTotal ?? 0,
-      state_tax_total: baseline?.state_tax_total ?? baseline?.stateTaxTotal ?? 0,
-      total_tax: baseline?.total_tax ?? baseline?.totalTax ?? 0,
-      taxable_income_federal: baseline?.taxable_income_federal ?? baseline?.taxableIncomeFederal ?? null,
-      taxable_income_state: baseline?.taxable_income_state ?? baseline?.taxableIncomeState ?? null,
-      effective_tax_rate_total: baseline?.effective_tax_rate_total ?? baseline?.effectiveTaxRateTotal ?? null,
+      federal_tax_total: baseline.federalTax,
+      state_tax_total: baseline.stateTax,
+      total_tax: baseline.totalTax,
+      taxable_income_federal: baseline.taxableIncome,
+      taxable_income_state: baseline.taxableIncome,
+      effective_tax_rate_total:
+        baseline.totalTax > 0 && baseline.taxableIncome > 0
+          ? baseline.totalTax / baseline.taxableIncome
+          : null,
     },
 
     strategy_evaluation,
@@ -175,28 +151,27 @@ const strategy_evaluation = evaluationList.map((s: any) => ({
     impact_summary: {
       apply_potential: applyPotential,
       revised: {
-        federal_tax_total: impact?.revised?.federal_tax_total ?? impact?.revised?.federalTaxTotal ?? 0,
-        state_tax_total: impact?.revised?.state_tax_total ?? impact?.revised?.stateTaxTotal ?? 0,
-        total_tax: impact?.revised?.total_tax ?? impact?.revised?.totalTax ?? 0,
-        taxable_income_federal: impact?.revised?.taxable_income_federal ?? impact?.revised?.taxableIncomeFederal ?? null,
-        taxable_income_state: impact?.revised?.taxable_income_state ?? impact?.revised?.taxableIncomeState ?? null,
+        federal_tax_total: impact.revised.federalTax,
+        state_tax_total: impact.revised.stateTax,
+        total_tax: impact.revised.totalTax,
+        taxable_income_federal: impact.revised.taxableIncome,
+        taxable_income_state: impact.revised.taxableIncome,
         effective_tax_rate_total:
-          impact?.revised?.effective_tax_rate_total ?? impact?.revised?.effectiveTaxRateTotal ?? null,
+          impact.revised.totalTax > 0 && impact.revised.taxableIncome > 0
+            ? impact.revised.totalTax / impact.revised.taxableIncome
+            : null,
       },
       deltas: {
-        total_tax_delta_low: impact?.deltas?.total_tax_delta_low ?? impact?.deltas?.totalTaxDeltaLow ?? 0,
-        total_tax_delta_base: impact?.deltas?.total_tax_delta_base ?? impact?.deltas?.totalTaxDeltaBase ?? 0,
-        total_tax_delta_high: impact?.deltas?.total_tax_delta_high ?? impact?.deltas?.totalTaxDeltaHigh ?? 0,
+        total_tax_delta_low: impact.totalTaxDelta.low,
+        total_tax_delta_base: impact.totalTaxDelta.base,
+        total_tax_delta_high: impact.totalTaxDelta.high,
       },
-      per_strategy,
-    },
-
-    brand: {
-      firm_name: intake?.brand?.firmName ?? intake?.brand?.firm_name ?? null,
-      tone: intake?.brand?.tone ?? "professional",
+      per_strategy: [],
     },
   };
 }
+
+/* ---------------- handler ---------------- */
 
 export async function POST(req: Request) {
   try {
@@ -209,44 +184,33 @@ export async function POST(req: Request) {
 
     const intake: NormalizedIntake2025 = parsed.intake;
 
-    // ✅ Load rules from bundled JSON (no fs / no path issues on Vercel)
+    // ✅ extract rules
     const raw = strategyRulesJson as any;
-if (!raw || !Array.isArray(raw.rules)) {
-  throw new Error("strategy-rules.json must be shaped like { rules: [...] }");
-}
-const rules = raw.rules as ContractStrategyRuleRow[];
+    if (!Array.isArray(raw?.rules)) {
+      throw new Error("strategy-rules.json must be shaped like { rules: [...] }");
+    }
+    const rules = raw.rules as ContractStrategyRuleRow[];
 
-
-    // Run baseline engine
     const baseline: BaselineTaxTotals = await runBaselineTaxEngine(intake);
 
-    // Evaluate strategies
-    const evaluatorInput: EvaluateStrategiesInput = {
-      intake: intake as any, // evaluator expects JsonObject, but we have typed intake
+    const evaluation = await evaluateStrategies({
+      intake: intake as any,
       rules,
-    };
-    const evaluation = await evaluateStrategies(evaluatorInput);
+    } as EvaluateStrategiesInput);
 
-    // Transform evaluator output to impact engine input format
     const strategyEvaluations = evaluation.all.map((s) => ({
       strategyId: s.strategy_id as any,
       status: s.status as any,
-      reasons: s.failedConditions.map((fc) => ({
-        code: fc.status,
-        message: fc.message ?? "",
-        field: fc.row.field,
-      })),
-      missingFields: s.missingRequired?.map((mr) => mr.field),
+      reasons: [],
+      missingFields: s.missingRequired?.map((m) => m.field),
     }));
 
-    // Run impact engine
-    const impactInput: ImpactEngineInput = {
+    const impact = await runImpactEngine({
       intake,
       baseline,
       strategyEvaluations: strategyEvaluations as any,
       applyPotential,
-    };
-    const impact = (await runImpactEngine(impactInput)) as ImpactEngineOutput;
+    } as ImpactEngineInput);
 
     const analysisContext = buildAnalysisContext({
       requestId,
@@ -267,41 +231,22 @@ const rules = raw.rules as ContractStrategyRuleRow[];
       store: false,
     });
 
-    const json = safeJsonParse(response.output_text);
-    const narrative: OpenAIAnalysisResponse = parseOpenAIAnalysisResponse(json);
+    const rawJson = safeJsonParse(response.output_text);
+    const normalizedJson = normalizeNarrativeCandidate(rawJson);
+    const narrative: OpenAIAnalysisResponse = parseOpenAIAnalysisResponse(normalizedJson);
 
-    const result = {
-      request_id: requestId,
-      created_at_iso: createdAtIso,
-      intake,
-      baseline,
-      strategy_evaluation: evaluation,
-      impact_summary: impact,
-      narrative,
-    };
-
-    // Option A: trigger GHL send directly from /api/analyze (non-blocking).
-    // We do NOT recompute numbers; we send the same payload we're returning (opaque JSON).
-    const email = (intake as any)?.contact?.email ?? (intake as any)?.email ?? undefined;
-    const firstName = (intake as any)?.contact?.first_name ?? (intake as any)?.firstName ?? undefined;
-    const phone = (intake as any)?.contact?.phone ?? (intake as any)?.phone ?? undefined;
-
-    if (typeof email === "string" && email.trim().length > 3) {
-      postToGhlIngest(req, {
-        email,
-        firstName,
-        phone,
-        analysis: result, // opaque JSON; emailRenderer will render best-effort
-        tags: ["analysis_ready"],
-      }).catch((err) => {
-        console.error("[analyze] postToGhlIngest failed:", err);
-      });
-    } else {
-      // Not fatal; the API still returns analysis.
-      console.warn("[analyze] No email present on intake; skipping GHL ingest.");
-    }
-
-    return NextResponse.json(result, { status: 200 });
+    return NextResponse.json(
+      {
+        request_id: requestId,
+        created_at_iso: createdAtIso,
+        intake,
+        baseline,
+        strategy_evaluation: evaluation,
+        impact_summary: impact,
+        narrative,
+      },
+      { status: 200 },
+    );
   } catch (err: any) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: "INVALID_REQUEST", issues: err.issues }, { status: 400 });
