@@ -21,21 +21,19 @@ export function mapUiToNormalizedIntake(ui: UiIntakeFormState): IntakeMapperOk |
       income_excl_business: toMoney(ui.grossIncome),
       state: normalizeState(ui.state),
     },
-
     business: {
       has_business: !!ui.hasBusiness,
-      type: ui.hasBusiness ? ui.businessType : null,
-      net_income: ui.hasBusiness ? toMoney(ui.businessNetIncome) : 0,
-      num_employees: ui.hasBusiness ? toInt(ui.numEmployees) : 0,
+      entity_type: ui.hasBusiness ? ui.businessEntityType : "UNKNOWN",
+      employees_count: ui.hasBusiness ? toInt(ui.employeesCount) : 0,
+      net_profit: ui.hasBusiness ? toMoney(ui.businessNetProfit) : 0,
     },
-
-    // Required by contract (empty objects are OK if schema allows)
-    retirement: {},
+    retirement: {
+      k401_employee_contrib_ytd: toMoney(ui.k401EmployeeContribYtd),
+    },
     strategies_in_use: ui.strategiesInUse ?? [],
   };
 
   const parsed = NormalizedIntakeSchema.safeParse(candidate);
-
   if (parsed.success) {
     return {
       ok: true,
@@ -55,9 +53,7 @@ export function mapUiToNormalizedIntake(ui: UiIntakeFormState): IntakeMapperOk |
 
 /* ---------------- helpers ---------------- */
 
-function buildContact(
-  ui: UiIntakeFormState
-): { email: string; firstName?: string; phone?: string } {
+function buildContact(ui: UiIntakeFormState): { email: string; firstName?: string; phone?: string } {
   const email = String(ui.contactEmail ?? "").trim();
   const firstName = String(ui.contactFirstName ?? "").trim();
   const phone = String(ui.contactPhone ?? "").trim();

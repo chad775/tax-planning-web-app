@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { mapUiToNormalizedIntake } from "../../lib/ui/intakeMapper";
 import type { UiIntakeFormState } from "../../lib/ui/types";
+import { STRATEGY_IDS } from "../../contracts/strategyIds";
 
 type AnalyzeApiResponse = unknown;
 
@@ -17,46 +18,113 @@ const FILING_STATUS_OPTIONS: Array<{ value: UiIntakeFormState["filingStatus"]; l
 ];
 
 const STATE_OPTIONS = [
-  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
+  "AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA",
   "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
   "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
   "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
   "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
 ] as const;
 
-const BUSINESS_TYPE_OPTIONS = [
-  { value: "sole_proprietorship", label: "Sole proprietorship" },
-  { value: "partnership", label: "Partnership" },
-  { value: "s_corporation", label: "S corporation" },
-  { value: "c_corporation", label: "C corporation" },
-] as const;
+const ENTITY_TYPE_OPTIONS: Array<{ value: UiIntakeFormState["businessEntityType"]; label: string }> = [
+  { value: "SOLE_PROP", label: "Sole proprietorship" },
+  { value: "S_CORP", label: "S corporation" },
+  { value: "C_CORP", label: "C corporation" },
+  { value: "PARTNERSHIP", label: "Partnership" },
+  { value: "LLC", label: "LLC" },
+  { value: "UNKNOWN", label: "Not sure / Other" },
+];
+
+function labelForStrategy(id: string): string {
+  // simple human labels; we can refine later
+  switch (id) {
+    case "augusta_loophole":
+      return "Augusta Loophole (rent your home to your business)";
+    case "medical_reimbursement":
+      return "Medical Expense Reimbursement Plan";
+    case "hiring_children":
+      return "Hiring Your Children";
+    case "cash_balance_plan":
+      return "Cash Balance Plan";
+    case "k401":
+      return "401(k)";
+    case "leveraged_charitable":
+      return "Leveraged Charitable Giving";
+    case "short_term_rental":
+      return "Short-Term Rental Strategy";
+    case "rtu_program":
+      return "Real Estate Professional / RTU Program";
+    case "film_credits":
+      return "Film Tax Credits";
+    default:
+      return id;
+  }
+}
 
 export default function IntakePage() {
   const router = useRouter();
 
   const [form, setForm] = useState<UiIntakeFormState>({
+    // Contact
+    contactEmail: "",
+    contactFirstName: "",
+    contactPhone: "",
+
+    // Personal
     filingStatus: "SINGLE",
     state: "CO",
     numChildren: 0,
     grossIncome: "",
+
+    // Business
     hasBusiness: false,
-    businessType: null,
-    businessNetIncome: "",
-    numEmployees: 0,
+    businessEntityType: "UNKNOWN",
+    businessNetProfit: "",
+    employeesCount: 0,
+
+    // Strategies
     strategiesInUse: [],
 
-    contactEmail: "",
-    contactFirstName: "",
-    contactPhone: "",
+    // Retirement (required by contract)
+    k401EmployeeContribYtd: 0,
   });
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = useState<Array<{ path: string; message: string }>>([]);
 
-  const canSubmit = useMemo(() => {
-    return !submitting;
-  }, [submitting]);
+  const canSubmit = useMemo(() => !submitting, [submitting]);
+
+  const issueByPath = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const i of fieldIssues) {
+      const list = m.get(i.path) ?? [];
+      list.push(i.message);
+      m.set(i.path, list);
+    }
+    return m;
+  }, [fieldIssues]);
+
+  function issuesFor(path: string): string[] {
+    return issueByPath.get(path) ?? [];
+  }
+
+  function set<K extends keyof UiIntakeFormState>(key: K, value: UiIntakeFormState[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function toggleStrategy(id: (typeof STRATEGY_IDS)[number]) {
+    setForm((prev) => {
+      const has = prev.strategiesInUse.includes(id as any);
+      const next = has
+        ? prev.strategiesInUse.filter((x) => x !== (id as any))
+        : [...prev.strategiesInUse, id as any];
+
+      // If they uncheck k401, we can keep contrib YTD as-is (0 default), but no need to clear.
+      return { ...prev, strategiesInUse: next };
+    });
+  }
+
+  const k401Checked = form.strategiesInUse.includes("k401" as any);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +134,7 @@ export default function IntakePage() {
     const mapped = mapUiToNormalizedIntake(form);
     if (!mapped.ok) {
       setFieldIssues(mapped.issues);
-      setFormError("Please fix the highlighted fields.");
+      setFormError("Please fix the highlighted fields below.");
       return;
     }
 
@@ -94,33 +162,13 @@ export default function IntakePage() {
 
       const json: AnalyzeApiResponse = await res.json();
 
-      // Results page renders only what /api/submit returned (analysis payload).
       sessionStorage.setItem("latestAnalysis", JSON.stringify(json));
-
       router.push("/results");
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Submit failed.");
     } finally {
       setSubmitting(false);
     }
-  }
-
-  const issueByPath = useMemo(() => {
-    const m = new Map<string, string[]>();
-    for (const i of fieldIssues) {
-      const list = m.get(i.path) ?? [];
-      list.push(i.message);
-      m.set(i.path, list);
-    }
-    return m;
-  }, [fieldIssues]);
-
-  function issuesFor(path: string): string[] {
-    return issueByPath.get(path) ?? [];
-  }
-
-  function set<K extends keyof UiIntakeFormState>(key: K, value: UiIntakeFormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   return (
@@ -143,6 +191,19 @@ export default function IntakePage() {
         >
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Error</div>
           <div>{formError}</div>
+
+          {fieldIssues.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Validation issues</div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: "#b00020", fontSize: 12 }}>
+                {fieldIssues.map((i, idx) => (
+                  <li key={idx}>
+                    <code>{i.path}</code>: {i.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -189,7 +250,9 @@ export default function IntakePage() {
             <Field label="Filing status" issues={issuesFor("personal.filing_status")}>
               <select
                 value={form.filingStatus}
-                onChange={(e) => set("filingStatus", e.target.value as UiIntakeFormState["filingStatus"])}
+                onChange={(e) =>
+                  set("filingStatus", e.target.value as UiIntakeFormState["filingStatus"])
+                }
                 style={inputStyle}
               >
                 {FILING_STATUS_OPTIONS.map((o) => (
@@ -251,9 +314,9 @@ export default function IntakePage() {
                   const checked = e.target.checked;
                   set("hasBusiness", checked);
                   if (!checked) {
-                    set("businessType", null);
-                    set("businessNetIncome", "");
-                    set("numEmployees", 0);
+                    set("businessEntityType", "UNKNOWN");
+                    set("businessNetProfit", "");
+                    set("employeesCount", 0);
                   }
                 }}
               />
@@ -261,15 +324,16 @@ export default function IntakePage() {
             </label>
 
             <div style={grid2Style}>
-              <Field label="Business type" issues={issuesFor("business.type")}>
+              <Field label="Entity type" issues={issuesFor("business.entity_type")}>
                 <select
-                  value={form.businessType ?? ""}
-                  onChange={(e) => set("businessType", (e.target.value || null) as any)}
+                  value={form.businessEntityType}
+                  onChange={(e) =>
+                    set("businessEntityType", e.target.value as UiIntakeFormState["businessEntityType"])
+                  }
                   style={inputStyle}
                   disabled={!form.hasBusiness}
                 >
-                  <option value="">Select…</option>
-                  {BUSINESS_TYPE_OPTIONS.map((o) => (
+                  {ENTITY_TYPE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
                     </option>
@@ -277,22 +341,22 @@ export default function IntakePage() {
                 </select>
               </Field>
 
-              <Field label="Business net income" issues={issuesFor("business.net_income")}>
+              <Field label="Business net profit" issues={issuesFor("business.net_profit")}>
                 <input
                   inputMode="decimal"
-                  value={String(form.businessNetIncome)}
-                  onChange={(e) => set("businessNetIncome", e.target.value)}
+                  value={String(form.businessNetProfit)}
+                  onChange={(e) => set("businessNetProfit", e.target.value)}
                   style={inputStyle}
                   disabled={!form.hasBusiness}
                   placeholder="e.g., 200000"
                 />
               </Field>
 
-              <Field label="Number of employees" issues={issuesFor("business.num_employees")}>
+              <Field label="Employees count" issues={issuesFor("business.employees_count")}>
                 <input
                   inputMode="numeric"
-                  value={String(form.numEmployees)}
-                  onChange={(e) => set("numEmployees", e.target.value)}
+                  value={String(form.employeesCount)}
+                  onChange={(e) => set("employeesCount", e.target.value)}
                   style={inputStyle}
                   disabled={!form.hasBusiness}
                   placeholder="0"
@@ -300,6 +364,56 @@ export default function IntakePage() {
               </Field>
             </div>
           </div>
+        </section>
+
+        <section style={cardStyle}>
+          <h2 style={h2Style}>Strategies already in use</h2>
+          <p style={{ marginTop: 0, color: "#444" }}>
+            Check any strategies you are already using. If 401(k) is checked, we’ll ask how much you’ve contributed YTD.
+          </p>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            {STRATEGY_IDS.map((id) => {
+              const checked = form.strategiesInUse.includes(id as any);
+              return (
+                <label key={id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleStrategy(id)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <strong>{labelForStrategy(id)}</strong>
+                    <div style={{ color: "#666", fontSize: 12 }}>{id}</div>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+
+          {k401Checked && (
+            <div style={{ marginTop: 14 }}>
+              <h3 style={{ margin: "10px 0 8px", fontSize: 16 }}>401(k) details</h3>
+              <div style={grid2Style}>
+                <Field
+                  label="401(k) employee contributions YTD"
+                  issues={issuesFor("retirement.k401_employee_contrib_ytd")}
+                >
+                  <input
+                    inputMode="decimal"
+                    value={String(form.k401EmployeeContribYtd)}
+                    onChange={(e) => set("k401EmployeeContribYtd", e.target.value)}
+                    style={inputStyle}
+                    placeholder="e.g., 12000"
+                  />
+                </Field>
+              </div>
+              <p style={{ margin: "8px 0 0", color: "#666", fontSize: 12 }}>
+                This is used as an input to estimate remaining room and strategy impact (best-effort).
+              </p>
+            </div>
+          )}
         </section>
 
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
