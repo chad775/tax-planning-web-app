@@ -194,7 +194,12 @@ export async function POST(req: Request) {
     const intake: NormalizedIntake2025 = parsed.intake;
 
     // ✅ Load rules from bundled JSON (no fs / no path issues on Vercel)
-    const rules = strategyRulesJson as unknown as ContractStrategyRuleRow[];
+    const raw = strategyRulesJson as any;
+if (!raw || !Array.isArray(raw.rules)) {
+  throw new Error("strategy-rules.json must be shaped like { rules: [...] }");
+}
+const rules = raw.rules as ContractStrategyRuleRow[];
+
 
     // Run baseline engine
     const baseline: BaselineTaxTotals = await runBaselineTaxEngine(intake);
