@@ -3,64 +3,52 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { TaxBreakdownTable, type TaxBreakdown } from "./components/TaxBreakdownTable";
+import { StrategyBucket } from "./components/StrategyBucket";
+import { WhatIfScenario } from "./components/WhatIfScenario";
 
 type JsonRecord = Record<string, unknown>;
 
-type StrategyRowVM = {
-  id: string;
-  title: string;
-  eligibilityStatus: "ELIGIBLE" | "NOT_ELIGIBLE" | "POTENTIAL" | "UNKNOWN";
-  alreadyInUse: boolean;
-
-  whatItIs: string | null;
-  why: string | null;
-
-  impactModel: string | null;
+type StrategyImpact = {
+  strategyId: string;
+  tier: 1 | 2 | 3;
+  flags: string[];
+  status: string | null;
   needsConfirmation: boolean | null;
-
   taxableIncomeDelta: { low: number; base: number; high: number } | null;
   taxLiabilityDelta: { low: number; base: number; high: number } | null;
-
-  flags: string[];
+  model: string | null;
   assumptions: Array<{ id: string; category: string; value: unknown }>;
 };
 
-/* ------------------------------------------------------------------ */
-/* Strategy tiers + ordering (UI-only catalog)                         */
-/* ------------------------------------------------------------------ */
-
-type StrategyTier = 1 | 2 | 3;
-
-const STRATEGY_META: Record<
-  string,
-  { tier: StrategyTier; order: number; title: string; showAs: "applied" | "opportunity" }
-> = {
-  // Tier 1 – always apply if eligible
-  augusta_loophole: { tier: 1, order: 10, title: "Augusta Rule", showAs: "applied" },
-  medical_reimbursement: { tier: 1, order: 20, title: "Medical Reimbursement Plan", showAs: "applied" },
-  k401: { tier: 1, order: 30, title: "401(k) Deferral", showAs: "applied" },
-
-  // Tier 2 – apply above income limits (when eligible)
-  hiring_children: { tier: 2, order: 40, title: "Hiring Children", showAs: "applied" },
-  cash_balance_plan: { tier: 2, order: 50, title: "Cash Balance Plan", showAs: "applied" },
-
-  // Tier 3 – show as “what-if opportunities”
-  short_term_rental: { tier: 3, order: 80, title: "Short-Term Rental + Cost Seg", showAs: "opportunity" },
-  leveraged_charitable: { tier: 3, order: 90, title: "Leveraged Charitable", showAs: "opportunity" },
-  rtu_program: { tier: 3, order: 95, title: "RTU Program", showAs: "opportunity" },
-  film_credits: { tier: 3, order: 100, title: "Film Credits", showAs: "opportunity" },
+type WhatIfScenarioData = {
+  strategyId: string;
+  tier: 3;
+  taxableIncomeDeltaBase: number;
+  totals: {
+    federalTax: number;
+    stateTax: number;
+    totalTax: number;
+  };
+  breakdown: TaxBreakdown;
 };
 
-function getStrategyMeta(id: string) {
-  return (
-    STRATEGY_META[id] ?? {
-      tier: 3 as const,
-      order: 9999,
-      title: humanizeStrategyId(id),
-      showAs: "opportunity" as const,
-    }
-  );
-}
+type StrategyBuckets = {
+  applied: StrategyImpact[];
+  opportunities: StrategyImpact[];
+  opportunity_what_if: WhatIfScenarioData[];
+};
+
+type ResultsViewModel = {
+  requestId: string | null;
+  filingStatus: string | null;
+  state: string | null;
+  hasBusiness: boolean;
+  executiveSummary: string | null;
+  baselineBreakdown: TaxBreakdown | null;
+  revisedBreakdown: TaxBreakdown | null;
+  strategyBuckets: StrategyBuckets | null;
+};
 
 /* ------------------------------------------------------------------ */
 /* Page                                                               */
@@ -89,7 +77,7 @@ export default function ResultsPage() {
 
   if (error) {
     return (
-      <main style={{ maxWidth: 980, margin: "0 auto", padding: "24px 16px" }}>
+      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px" }}>
         <h1 style={{ fontSize: 28, fontWeight: 900, margin: "0 0 10px" }}>Results</h1>
         <div
           role="alert"
@@ -113,7 +101,7 @@ export default function ResultsPage() {
 
   if (!raw || !vm) {
     return (
-      <main style={{ maxWidth: 980, margin: "0 auto", padding: "24px 16px" }}>
+      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px" }}>
         <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0 }}>Results</h1>
         <p style={{ color: "#444" }}>Loading…</p>
       </main>
@@ -121,140 +109,109 @@ export default function ResultsPage() {
   }
 
   return (
-    <main style={{ maxWidth: 980, margin: "0 auto", padding: "24px 16px" }}>
-      <header style={{ display: "grid", gap: 6, marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0 }}>Your Tax Planning Results</h1>
-        <p style={{ margin: 0, color: "#444" }}>
+    <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px" }}>
+      <header style={{ display: "grid", gap: 6, marginBottom: 24 }}>
+        <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0 }}>Your Tax Planning Results</h1>
+        <p style={{ margin: 0, color: "#666", fontSize: 15 }}>
           These are estimates based on the information provided. Final eligibility and savings depend on your facts and
           implementation.
         </p>
       </header>
 
+      {/* Overview Section */}
       <section style={cardStyle}>
         <h2 style={h2Style}>Overview</h2>
         <div style={pillRowStyle}>
           <Pill label="Request ID" value={vm.requestId ?? "—"} />
-          <Pill label="Filing status" value={vm.filingStatus ?? "—"} />
+          <Pill label="Filing Status" value={vm.filingStatus ?? "—"} />
           <Pill label="State" value={vm.state ?? "—"} />
           <Pill label="Business" value={vm.hasBusiness ? "Yes" : "No"} />
         </div>
 
-        <div style={{ marginTop: 12 }}>
-          <h3 style={h3Style}>Executive summary</h3>
-          <p style={{ margin: 0, whiteSpace: "pre-wrap", color: "#111" }}>
-            {vm.executiveSummary ?? "No executive summary returned."}
-          </p>
-        </div>
-      </section>
-
-      <section style={cardStyle}>
-        <h2 style={h2Style}>Baseline vs revised</h2>
-
-        <div style={twoColStyle}>
-          <div style={subCardStyle}>
-            <div style={subCardTitleStyle}>Baseline</div>
-            <KeyValues items={vm.baselineTotals} />
-          </div>
-
-          <div style={subCardStyle}>
-            <div style={subCardTitleStyle}>After strategies (estimate)</div>
-            <KeyValues items={vm.revisedTotals} />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <div style={twoColStyle}>
-            <div>
-              <div style={smallTitleStyle}>Baseline narrative</div>
-              <p style={paragraphStyle}>{vm.baselineNarrative ?? "—"}</p>
-            </div>
-            <div>
-              <div style={smallTitleStyle}>Revised narrative</div>
-              <p style={paragraphStyle}>{vm.revisedNarrative ?? "—"}</p>
-            </div>
-          </div>
-        </div>
-
-        {vm.deltas && (
-          <div style={{ marginTop: 12 }}>
-            <div style={smallTitleStyle}>Estimated change (deltas)</div>
-            <KeyValues items={vm.deltas} />
+        {vm.executiveSummary && (
+          <div style={{ marginTop: 16 }}>
+            <h3 style={h3Style}>Executive Summary</h3>
+            <p style={{ margin: 0, whiteSpace: "pre-wrap", color: "#111", lineHeight: 1.6 }}>
+              {vm.executiveSummary}
+            </p>
           </div>
         )}
       </section>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Strategies (bucketed)                                              */}
-      {/* ------------------------------------------------------------------ */}
+      {/* Baseline vs Revised Tax Breakdown */}
+      {vm.baselineBreakdown && vm.revisedBreakdown && (
+        <section style={cardStyle}>
+          <h2 style={h2Style}>Tax Breakdown: Baseline vs After Strategies</h2>
+          <TaxBreakdownTable baseline={vm.baselineBreakdown} revised={vm.revisedBreakdown} />
+        </section>
+      )}
 
-      <section style={cardStyle}>
-        <h2 style={h2Style}>Strategies</h2>
+      {/* Strategy Buckets */}
+      {vm.strategyBuckets && (
+        <section style={cardStyle}>
+          <h2 style={h2Style}>Strategies</h2>
 
-        <h3 style={{ ...h3Style, marginTop: 0 }}>Applied strategies (Tier 1–2)</h3>
-        <p style={{ marginTop: 0, color: "#444" }}>
-          These are the strategies we treat as “stacking” together to produce your “After strategies” estimate.
-        </p>
+          {/* Tier 1: Applied Automatically */}
+          <StrategyBucket
+            strategies={vm.strategyBuckets.applied.filter((s) => s.tier === 1)}
+            tier={1}
+            title="Tier 1: Applied Automatically"
+            description="These strategies are applied automatically when eligible. They stack together to reduce your taxable income."
+          />
 
-        <div style={{ display: "grid", gap: 12 }}>
-          {vm.strategies
-            .filter((s) => getStrategyMeta(s.id).showAs === "applied")
-            .map((s) => (
-              <StrategyCard key={s.id} raw={raw} s={s} />
-            ))}
-        </div>
+          {/* Tier 2: Applied Conditionally */}
+          <div style={{ marginTop: 24 }}>
+            <StrategyBucket
+              strategies={vm.strategyBuckets.applied.filter((s) => s.tier === 2)}
+              tier={2}
+              title="Tier 2: Applied Conditionally"
+              description="These strategies are applied when eligible and income thresholds are met. They stack with Tier 1 strategies."
+            />
+          </div>
 
-        <div style={{ marginTop: 18 }}>
-          <h3 style={h3Style}>Opportunities to consider (Tier 3)</h3>
-          <p style={{ marginTop: 0, color: "#444" }}>
-            These are shown as “what-if” opportunities. When we show savings for Tier 3, each one should be calculated
-            as if it’s the only additional strategy added on top of Tier 1–2 (not combined with other Tier 3 items).
-          </p>
+          {/* Tier 3: Opportunities */}
+          <div style={{ marginTop: 24 }}>
+            <StrategyBucket
+              strategies={vm.strategyBuckets.opportunities}
+              tier={3}
+              title="Tier 3: Opportunities to Consider"
+              description="These are shown as 'what-if' opportunities. Each strategy is calculated independently (not combined with other Tier 3 strategies)."
+            />
+          </div>
 
-          <div style={{ display: "grid", gap: 12 }}>
-            {vm.strategies
-              .filter((s) => getStrategyMeta(s.id).showAs === "opportunity")
-              .map((s) => (
-                <StrategyCard key={s.id} raw={raw} s={s} />
+          {/* Tier 3 What-If Scenarios */}
+          {vm.strategyBuckets.opportunity_what_if.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <h3 style={{ ...h3Style, marginBottom: 12 }}>What-If Scenarios (Tier 3)</h3>
+              <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
+                Below shows the tax breakdown if each Tier 3 strategy were applied individually on top of Tier 1-2
+                strategies.
+              </p>
+              {vm.strategyBuckets.opportunity_what_if.map((whatIf) => (
+                <WhatIfScenario
+                  key={whatIf.strategyId}
+                  strategyId={whatIf.strategyId}
+                  breakdown={whatIf.breakdown}
+                  taxableIncomeDeltaBase={whatIf.taxableIncomeDeltaBase}
+                  baselineBreakdown={vm.baselineBreakdown!}
+                />
               ))}
-          </div>
-        </div>
-      </section>
+            </div>
+          )}
+        </section>
+      )}
 
+      {/* Actions */}
       <section style={cardStyle}>
-        <h2 style={h2Style}>Disclaimers</h2>
-        {vm.disclaimers.length === 0 ? (
-          <p style={{ margin: 0, color: "#555" }}>No disclaimers returned.</p>
-        ) : (
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {vm.disclaimers.map((d, idx) => (
-              <li key={idx} style={{ marginBottom: 6, whiteSpace: "pre-wrap" }}>
-                {d}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section style={cardStyle}>
-        <h2 style={h2Style}>Next steps</h2>
-        <p style={{ marginTop: 0, whiteSpace: "pre-wrap" }}>{vm.cta ?? "—"}</p>
-
-        <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+        <h2 style={h2Style}>Next Steps</h2>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button onClick={() => router.push("/intake")} style={buttonStyle}>
-            Run again
+            Run Analysis Again
           </button>
           <button onClick={() => copyToClipboard(JSON.stringify(raw, null, 2))} style={buttonSecondaryStyle}>
-            Copy raw JSON
+            Copy Raw JSON
           </button>
         </div>
-      </section>
-
-      <section style={cardStyle}>
-        <h2 style={h2Style}>Developer</h2>
-        <p style={{ marginTop: 0, color: "#444" }}>
-          This is the raw JSON returned by <code>/api/analyze</code>.
-        </p>
-        <pre style={preStyle}>{JSON.stringify(raw, null, 2)}</pre>
       </section>
     </main>
   );
@@ -264,147 +221,12 @@ export default function ResultsPage() {
 /* Components                                                         */
 /* ------------------------------------------------------------------ */
 
-function StrategyCard(props: { raw: JsonRecord; s: StrategyRowVM }) {
-  const { raw, s } = props;
-  const meta = getStrategyMeta(s.id);
-
-  return (
-    <div style={strategyCardStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-        <div>
-          <div style={{ fontWeight: 900, fontSize: 16 }}>{s.title}</div>
-          <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Tag text={humanizeEligibility(s.eligibilityStatus)} tone={eligibilityTone(s.eligibilityStatus)} />
-            <Tag text={`Tier ${meta.tier}`} tone="neutral" />
-            {s.alreadyInUse && <Tag text="Already in use" tone="neutral" />}
-            {s.needsConfirmation && <Tag text="Needs confirmation" tone="warn" />}
-            {s.impactModel ? <Tag text={`Model: ${s.impactModel}`} tone="neutral" /> : null}
-          </div>
-        </div>
-
-        <button
-          onClick={() => copyToClipboard(JSON.stringify(buildStrategyDebugBlob(raw, s.id), null, 2))}
-          style={tinyButtonStyle}
-          title="Copy strategy debug JSON"
-        >
-          Copy debug
-        </button>
-      </div>
-
-      {s.whatItIs && (
-        <div style={{ marginTop: 10 }}>
-          <div style={smallTitleStyle}>What it is</div>
-          <p style={paragraphStyle}>{s.whatItIs}</p>
-        </div>
-      )}
-
-      {s.why && (
-        <div style={{ marginTop: 10 }}>
-          <div style={smallTitleStyle}>Why it applies (or not)</div>
-          <p style={paragraphStyle}>{s.why}</p>
-        </div>
-      )}
-
-      <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-        {s.taxableIncomeDelta && (
-          <div>
-            <div style={smallTitleStyle}>Taxable income delta</div>
-            <KeyValues
-              items={{
-                low: money(s.taxableIncomeDelta.low),
-                base: money(s.taxableIncomeDelta.base),
-                high: money(s.taxableIncomeDelta.high),
-              }}
-            />
-          </div>
-        )}
-
-        {s.taxLiabilityDelta && (
-          <div>
-            <div style={smallTitleStyle}>Tax liability delta</div>
-            <KeyValues
-              items={{
-                low: money(s.taxLiabilityDelta.low),
-                base: money(s.taxLiabilityDelta.base),
-                high: money(s.taxLiabilityDelta.high),
-              }}
-            />
-          </div>
-        )}
-
-        {(s.flags.length > 0 || s.assumptions.length > 0) && (
-          <div style={{ display: "grid", gap: 8 }}>
-            {s.flags.length > 0 && (
-              <div>
-                <div style={smallTitleStyle}>Flags</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {s.flags.map((f) => (
-                    <Tag key={f} text={f} tone="neutral" />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {s.assumptions.length > 0 && (
-              <div>
-                <div style={smallTitleStyle}>Assumptions</div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  {s.assumptions.map((a) => (
-                    <div key={a.id} style={assumptionRowStyle}>
-                      <div style={{ fontWeight: 800 }}>{a.id}</div>
-                      <div style={{ color: "#444" }}>{a.category}</div>
-                      <div style={{ color: "#111" }}>{formatValue(a.value)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function Pill(props: { label: string; value: string }) {
   return (
     <div style={pillStyle}>
-      <div style={{ fontSize: 12, color: "#555", fontWeight: 800 }}>{props.label}</div>
+      <div style={{ fontSize: 12, color: "#666", fontWeight: 700 }}>{props.label}</div>
       <div style={{ fontSize: 14, color: "#111", fontWeight: 900 }}>{props.value}</div>
     </div>
-  );
-}
-
-function Tag(props: { text: string; tone: "good" | "bad" | "warn" | "neutral" }) {
-  const toneStyle =
-    props.tone === "good"
-      ? { border: "1px solid #117a2a", background: "#f0fff4", color: "#117a2a" }
-      : props.tone === "bad"
-        ? { border: "1px solid #b00020", background: "#fff5f5", color: "#b00020" }
-        : props.tone === "warn"
-          ? { border: "1px solid #946200", background: "#fff9e6", color: "#946200" }
-          : { border: "1px solid #ccc", background: "#fafafa", color: "#333" };
-
-  return <span style={{ ...tagStyle, ...toneStyle }}>{props.text}</span>;
-}
-
-function KeyValues(props: { items: Record<string, unknown> | null }) {
-  const entries = props.items ? Object.entries(props.items) : [];
-  if (entries.length === 0) return <div style={{ color: "#555" }}>—</div>;
-
-  return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-      <tbody>
-        {entries.map(([k, v]) => (
-          <tr key={k}>
-            <td style={{ padding: "6px 8px", borderTop: "1px solid #eee", width: "45%", color: "#333" }}>{k}</td>
-            <td style={{ padding: "6px 8px", borderTop: "1px solid #eee", color: "#111", fontWeight: 700 }}>
-              {formatValue(v)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
@@ -412,10 +234,9 @@ function KeyValues(props: { items: Record<string, unknown> | null }) {
 /* View-model build                                                   */
 /* ------------------------------------------------------------------ */
 
-function buildViewModel(raw: JsonRecord | null) {
+function buildViewModel(raw: JsonRecord | null): ResultsViewModel | null {
   if (!raw) return null;
 
-  const narrative = asRecord(raw["narrative"]);
   const intake = asRecord(raw["intake"]);
   const personal = asRecord(intake?.["personal"]);
   const business = asRecord(intake?.["business"]);
@@ -425,122 +246,25 @@ function buildViewModel(raw: JsonRecord | null) {
   const state = asString(personal?.["state"]);
   const hasBusiness = Boolean(business?.["has_business"]);
 
+  const narrative = asRecord(raw["narrative"]);
   const executiveSummary = asString(narrative?.["executive_summary"]);
 
-  const baselineNarrative = asString(narrative?.["baseline_tax_summary"]);
-  const revisedNarrative = asString(narrative?.["revised_tax_summary"]);
+  // Extract breakdowns
+  const baselineBreakdown = normalizeBreakdown(asRecord(raw["baseline_breakdown"]));
+  const revisedBreakdown = normalizeBreakdown(asRecord(raw["revised_breakdown"]));
 
-  const baselineTotals = normalizeTotals(asRecord(raw["baseline"]));
-  const impactSummary = asRecord(raw["impact_summary"]);
-  const revisedTotals = normalizeTotals(
-    asRecord(deepGet(impactSummary, ["revisedTotals", "revised"])) ??
-      asRecord(deepGet(impactSummary, ["revised_totals", "revised"])) ??
-      asRecord(deepGet(impactSummary, ["revised", "totals"])) ??
-      asRecord(deepGet(impactSummary, ["revised"])) ??
-      null,
-  );
-
-  const deltas = normalizeTotals(
-    asRecord(deepGet(impactSummary, ["revisedTotals", "totalTaxDelta"])) ??
-      asRecord(deepGet(impactSummary, ["deltas"])) ??
-      null,
-  );
-
-  // strategy sets
-  const strategiesInUseArr = asStringArray(intake?.["strategies_in_use"]) ?? [];
-  const strategiesInUse = new Set<string>(strategiesInUseArr);
-
-  const strategyEval = asRecord(raw["strategy_evaluation"]);
-  const evalAll = asArray(strategyEval?.["all"]) ?? [];
-
-  const impactImpacts = asArray(deepGet(impactSummary, ["impacts"])) ?? [];
-
-  const narrativeExplanations = asArray(narrative?.["strategy_explanations"]) ?? [];
-
-  const evalById = new Map<string, JsonRecord>();
-  for (const item of evalAll) {
-    const r = asRecord(item);
-    if (!r) continue;
-
-    const id = asString(r["strategy_id"]);
-    if (id) evalById.set(id, r);
-  }
-
-  const impactById = new Map<string, JsonRecord>();
-  for (const item of impactImpacts) {
-    const r = asRecord(item);
-    if (!r) continue;
-
-    const id = asString(r["strategyId"]) ?? asString(r["strategy_id"]);
-    if (id) impactById.set(id, r);
-  }
-
-  const explById = new Map<string, JsonRecord>();
-  for (const item of narrativeExplanations) {
-    const r = asRecord(item);
-    if (!r) continue;
-
-    const id = asString(r["strategy_id"]) ?? asString(r["strategyId"]) ?? asString(r["id"]);
-    if (id) explById.set(id, r);
-  }
-
-  // union of IDs from any source
-  const idSet = new Set<string>();
-  for (const id of evalById.keys()) idSet.add(id);
-  for (const id of impactById.keys()) idSet.add(id);
-  for (const id of explById.keys()) idSet.add(id);
-  for (const id of strategiesInUse) idSet.add(id);
-
-  const strategies: StrategyRowVM[] = Array.from(idSet)
-    .sort((a, b) => {
-      const ma = getStrategyMeta(a);
-      const mb = getStrategyMeta(b);
-      return ma.order - mb.order || a.localeCompare(b);
-    })
-    .map((id) => {
-      const ev = evalById.get(id);
-      const imp = impactById.get(id);
-      const ex = explById.get(id);
-
-      const eligibilityStatus =
-        (asString(ev?.["status"]) as StrategyRowVM["eligibilityStatus"]) ?? "UNKNOWN";
-
-      const impactModel = asString(imp?.["model"]) ?? null;
-      const needsConfirmation = asBoolean(imp?.["needsConfirmation"]);
-
-      const taxableIncomeDelta = normalizeRange3(asRecord(imp?.["taxableIncomeDelta"]));
-      const taxLiabilityDelta = normalizeRange3(asRecord(imp?.["taxLiabilityDelta"]));
-
-      const flags = asStringArray(imp?.["flags"]) ?? [];
-      const assumptions = normalizeAssumptions(asArray(imp?.["assumptions"]) ?? []);
-
-      const whatItIs = asString(ex?.["what_it_is"]) ?? asString(ex?.["whatItIs"]) ?? asString(ex?.["title"]) ?? null;
-
-      const why =
-        asString(ex?.["why_it_applies_or_not"]) ??
-        asString(ex?.["whyItAppliesOrNot"]) ??
-        asString(ex?.["summary"]) ??
-        asString(ex?.["explanation"]) ??
-        null;
-
-      return {
-        id,
-        title: getStrategyMeta(id).title,
-        eligibilityStatus,
-        alreadyInUse: strategiesInUse.has(id),
-        whatItIs,
-        why,
-        impactModel,
-        needsConfirmation,
-        taxableIncomeDelta,
-        taxLiabilityDelta,
-        flags,
-        assumptions,
-      };
-    });
-
-  const disclaimers = asStringArray(narrative?.["disclaimers"]) ?? [];
-  const cta = asString(narrative?.["call_to_action_text"]) ?? asString(narrative?.["call_to_action"]) ?? null;
+  // Extract strategy buckets
+  const strategyBucketsRaw = asRecord(raw["strategy_buckets"]);
+  const strategyBuckets: StrategyBuckets | null = strategyBucketsRaw
+    ? {
+        applied: normalizeStrategyImpacts(asArray(strategyBucketsRaw["applied"]) ?? []),
+        opportunities: normalizeStrategyImpacts(asArray(strategyBucketsRaw["opportunities"]) ?? []),
+        opportunity_what_if: normalizeWhatIfScenarios(
+          asArray(strategyBucketsRaw["opportunity_what_if"]) ?? [],
+          baselineBreakdown,
+        ),
+      }
+    : null;
 
   return {
     requestId,
@@ -548,14 +272,9 @@ function buildViewModel(raw: JsonRecord | null) {
     state,
     hasBusiness,
     executiveSummary,
-    baselineNarrative: baselineNarrative ? safeMaybeJsonToPrettyText(baselineNarrative) : null,
-    revisedNarrative: revisedNarrative ? safeMaybeJsonToPrettyText(revisedNarrative) : null,
-    baselineTotals,
-    revisedTotals,
-    deltas,
-    strategies,
-    disclaimers,
-    cta,
+    baselineBreakdown,
+    revisedBreakdown,
+    strategyBuckets,
   };
 }
 
@@ -576,55 +295,119 @@ function asString(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
-function asBoolean(v: unknown): boolean | null {
-  return typeof v === "boolean" ? v : null;
-}
-
 function asNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-function asStringArray(v: unknown): string[] | null {
-  if (!Array.isArray(v)) return null;
-  const out: string[] = [];
-  for (const item of v) {
-    if (typeof item === "string") out.push(item);
+function normalizeBreakdown(v: JsonRecord | null): TaxBreakdown | null {
+  if (!v) return null;
+
+  const adjustments = asRecord(v["adjustments"]);
+  const federal = asRecord(v["federal"]);
+  const ctc = asRecord(federal?.["ctc"]);
+  const state = asRecord(v["state"]);
+  const totals = asRecord(v["totals"]);
+
+  if (
+    !asNumber(v["gross_income"]) ||
+    !asNumber(v["agi"]) ||
+    !asNumber(v["standard_deduction"]) ||
+    !asNumber(v["taxable_income"]) ||
+    !federal ||
+    !ctc ||
+    !state ||
+    !totals
+  ) {
+    return null;
+  }
+
+  return {
+    gross_income: asNumber(v["gross_income"])!,
+    adjustments: {
+      k401_employee_contrib_ytd: asNumber(adjustments?.["k401_employee_contrib_ytd"]) ?? 0,
+    },
+    agi: asNumber(v["agi"])!,
+    standard_deduction: asNumber(v["standard_deduction"])!,
+    taxable_income: asNumber(v["taxable_income"])!,
+    federal: {
+      income_tax_before_credits: asNumber(federal["income_tax_before_credits"]) ?? 0,
+      ctc: {
+        available: asNumber(ctc["available"]) ?? 0,
+        used_nonrefundable: asNumber(ctc["used_nonrefundable"]) ?? 0,
+        unused: asNumber(ctc["unused"]) ?? 0,
+        ...(asString(ctc["phaseout_rules"]) ? { phaseout_rules: asString(ctc["phaseout_rules"])! } : {}),
+      },
+      tax_after_credits: asNumber(federal["tax_after_credits"]) ?? 0,
+    },
+    state: {
+      tax: asNumber(state["tax"]) ?? 0,
+      taxable_base_proxy: asNumber(state["taxable_base_proxy"]) ?? 0,
+    },
+    totals: {
+      federalTax: asNumber(totals["federalTax"]) ?? 0,
+      stateTax: asNumber(totals["stateTax"]) ?? 0,
+      totalTax: asNumber(totals["totalTax"]) ?? 0,
+    },
+  };
+}
+
+function normalizeStrategyImpacts(arr: unknown[]): StrategyImpact[] {
+  const out: StrategyImpact[] = [];
+  for (const item of arr) {
+    const r = asRecord(item);
+    if (!r) continue;
+
+    const strategyId = asString(r["strategyId"]) ?? asString(r["strategy_id"]) ?? "";
+    const tier = asNumber(r["tier"]);
+    if (!strategyId || !tier || (tier !== 1 && tier !== 2 && tier !== 3)) continue;
+
+    const taxableIncomeDelta = normalizeRange3(asRecord(r["taxableIncomeDelta"]));
+    const taxLiabilityDelta = normalizeRange3(asRecord(r["taxLiabilityDelta"]));
+    const assumptions = normalizeAssumptions(asArray(r["assumptions"]) ?? []);
+
+    out.push({
+      strategyId,
+      tier: tier as 1 | 2 | 3,
+      flags: asStringArray(r["flags"]) ?? [],
+      status: asString(r["status"]),
+      needsConfirmation: asBoolean(r["needsConfirmation"]),
+      taxableIncomeDelta,
+      taxLiabilityDelta,
+      model: asString(r["model"]),
+      assumptions,
+    });
   }
   return out;
 }
 
-function deepGet(obj: unknown, path: string[]): unknown {
-  let cur: unknown = obj;
-  for (const p of path) {
-    const r = asRecord(cur);
-    if (!r) return undefined;
-    cur = r[p];
+function normalizeWhatIfScenarios(
+  arr: unknown[],
+  baselineBreakdown: TaxBreakdown | null,
+): WhatIfScenarioData[] {
+  const out: WhatIfScenarioData[] = [];
+  for (const item of arr) {
+    const r = asRecord(item);
+    if (!r) continue;
+
+    const strategyId = asString(r["strategyId"]) ?? "";
+    const breakdown = normalizeBreakdown(asRecord(r["breakdown"]));
+    const totals = asRecord(r["totals"]);
+
+    if (!strategyId || !breakdown || !totals) continue;
+
+    out.push({
+      strategyId,
+      tier: 3,
+      taxableIncomeDeltaBase: asNumber(r["taxableIncomeDeltaBase"]) ?? 0,
+      totals: {
+        federalTax: asNumber(totals["federalTax"]) ?? 0,
+        stateTax: asNumber(totals["stateTax"]) ?? 0,
+        totalTax: asNumber(totals["totalTax"]) ?? 0,
+      },
+      breakdown,
+    });
   }
-  return cur;
-}
-
-function normalizeTotals(v: JsonRecord | null): Record<string, unknown> | null {
-  if (!v) return null;
-
-  const federalTax = asNumber(v["federalTax"]) ?? asNumber(v["federal_tax_total"]) ?? null;
-  const stateTax = asNumber(v["stateTax"]) ?? asNumber(v["state_tax_total"]) ?? null;
-  const totalTax = asNumber(v["totalTax"]) ?? asNumber(v["total_tax"]) ?? null;
-  const taxableIncome = asNumber(v["taxableIncome"]) ?? asNumber(v["taxable_income_federal"]) ?? null;
-
-  const out: Record<string, unknown> = {};
-  if (federalTax !== null) out["federalTax"] = money(federalTax);
-  if (stateTax !== null) out["stateTax"] = money(stateTax);
-  if (totalTax !== null) out["totalTax"] = money(totalTax);
-  if (taxableIncome !== null) out["taxableIncome"] = money(taxableIncome);
-
-  for (const [k, vv] of Object.entries(v)) {
-    if (k in out) continue;
-    if (k === "baseline" || k === "revised") continue;
-    if (typeof vv === "object") continue;
-    out[k] = vv;
-  }
-
-  return Object.keys(out).length ? out : null;
+  return out;
 }
 
 function normalizeRange3(v: JsonRecord | null): { low: number; base: number; high: number } | null {
@@ -648,88 +431,17 @@ function normalizeAssumptions(v: unknown[]): Array<{ id: string; category: strin
   return out;
 }
 
-function safeMaybeJsonToPrettyText(s: string): string {
-  try {
-    const obj = JSON.parse(s) as unknown;
-    const r = asRecord(obj);
-    if (!r) return s;
-
-    const parts: string[] = [];
-    const fed = asNumber(r["federal_tax_total"]);
-    const st = asNumber(r["state_tax_total"]);
-    const tot = asNumber(r["total_tax"]);
-    const ti = asNumber(r["taxable_income_federal"]) ?? asNumber(r["taxable_income_state"]);
-
-    if (ti !== null) parts.push(`Taxable income (proxy): ${money(ti)}`);
-    if (fed !== null) parts.push(`Federal tax: ${money(fed)}`);
-    if (st !== null) parts.push(`State tax: ${money(st)}`);
-    if (tot !== null) parts.push(`Total tax: ${money(tot)}`);
-
-    return parts.length ? parts.join("\n") : s;
-  } catch {
-    return s;
+function asStringArray(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: string[] = [];
+  for (const item of v) {
+    if (typeof item === "string") out.push(item);
   }
+  return out;
 }
 
-function money(n: number): string {
-  const sign = n < 0 ? "-" : "";
-  const abs = Math.abs(n);
-  return `${sign}$${abs.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-
-function formatValue(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "string") return v;
-  if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  if (typeof v === "boolean") return v ? "true" : "false";
-  if (Array.isArray(v)) return v.map(formatValue).join(", ");
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
-}
-
-function eligibilityTone(status: StrategyRowVM["eligibilityStatus"]): "good" | "bad" | "warn" | "neutral" {
-  if (status === "ELIGIBLE") return "good";
-  if (status === "NOT_ELIGIBLE") return "bad";
-  if (status === "POTENTIAL") return "warn";
-  return "neutral";
-}
-
-function humanizeEligibility(status: StrategyRowVM["eligibilityStatus"]): string {
-  if (status === "ELIGIBLE") return "Eligible";
-  if (status === "NOT_ELIGIBLE") return "Not eligible";
-  if (status === "POTENTIAL") return "Potential (needs info)";
-  return "Unknown";
-}
-
-function humanizeStrategyId(id: string): string {
-  return id
-    .split("_")
-    .map((w) => (w.length ? w.charAt(0).toUpperCase() + w.slice(1) : w))
-    .join(" ");
-}
-
-function buildStrategyDebugBlob(raw: JsonRecord | null, id: string): unknown {
-  if (!raw) return null;
-  const narrative = asRecord(raw["narrative"]);
-  const impactSummary = asRecord(raw["impact_summary"]);
-  const evalObj = asRecord(raw["strategy_evaluation"]);
-
-  const impacts = asArray(deepGet(impactSummary, ["impacts"])) ?? [];
-  const impactHit = impacts.map(asRecord).find((r) => {
-    const sid = asString(r?.["strategyId"]) ?? asString(r?.["strategy_id"]);
-    return sid === id;
-  });
-
-  const evalAll = asArray(evalObj?.["all"]) ?? [];
-  const evalHit = evalAll.map(asRecord).find((r) => asString(r?.["strategy_id"]) === id);
-
-  const expl = asArray(narrative?.["strategy_explanations"]) ?? [];
-  const explHit = expl.map(asRecord).find((r) => {
-    const sid = asString(r?.["strategy_id"]) ?? asString(r?.["strategyId"]) ?? asString(r?.["id"]);
-    return sid === id;
-  });
-
-  return { id, eval: evalHit, impact: impactHit, narrative: explHit };
+function asBoolean(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
 }
 
 async function copyToClipboard(text: string) {
@@ -747,40 +459,21 @@ async function copyToClipboard(text: string) {
 const cardStyle: React.CSSProperties = {
   border: "1px solid #ddd",
   borderRadius: 14,
-  padding: 16,
+  padding: 20,
   background: "#fff",
-  marginBottom: 14,
+  marginBottom: 20,
 };
 
 const h2Style: React.CSSProperties = {
-  margin: "0 0 10px",
-  fontSize: 18,
+  margin: "0 0 16px",
+  fontSize: 20,
   fontWeight: 900,
 };
 
 const h3Style: React.CSSProperties = {
   margin: "0 0 8px",
-  fontSize: 14,
+  fontSize: 16,
   fontWeight: 900,
-};
-
-const smallTitleStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  color: "#333",
-  marginBottom: 6,
-};
-
-const paragraphStyle: React.CSSProperties = {
-  margin: 0,
-  whiteSpace: "pre-wrap",
-  color: "#111",
-};
-
-const twoColStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 12,
 };
 
 const pillRowStyle: React.CSSProperties = {
@@ -796,45 +489,6 @@ const pillStyle: React.CSSProperties = {
   padding: "8px 12px",
   display: "grid",
   gap: 2,
-};
-
-const tagStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 900,
-  padding: "3px 10px",
-  borderRadius: 999,
-  display: "inline-flex",
-  alignItems: "center",
-};
-
-const subCardStyle: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
-  borderRadius: 12,
-  padding: 12,
-  background: "#fff",
-};
-
-const subCardTitleStyle: React.CSSProperties = {
-  fontWeight: 900,
-  marginBottom: 8,
-};
-
-const strategyCardStyle: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
-  borderRadius: 14,
-  padding: 14,
-  background: "#fff",
-};
-
-const assumptionRowStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1.2fr 0.8fr 1fr",
-  gap: 10,
-  border: "1px solid #eee",
-  borderRadius: 10,
-  padding: 10,
-  background: "#fafafa",
-  fontSize: 12,
 };
 
 const buttonStyle: React.CSSProperties = {
@@ -855,27 +509,4 @@ const buttonSecondaryStyle: React.CSSProperties = {
   color: "#111",
   fontWeight: 800,
   cursor: "pointer",
-};
-
-const tinyButtonStyle: React.CSSProperties = {
-  borderRadius: 10,
-  border: "1px solid #ccc",
-  padding: "6px 10px",
-  background: "#fff",
-  color: "#111",
-  fontWeight: 800,
-  cursor: "pointer",
-  fontSize: 12,
-  whiteSpace: "nowrap",
-};
-
-const preStyle: React.CSSProperties = {
-  margin: 0,
-  whiteSpace: "pre-wrap",
-  background: "#f7f7f7",
-  border: "1px solid #e5e5e5",
-  padding: 12,
-  borderRadius: 12,
-  fontSize: 12,
-  lineHeight: 1.4,
 };
