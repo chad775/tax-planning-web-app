@@ -4,14 +4,20 @@ import "server-only";
 import type { NormalizedIntake2025 } from "../../contracts/intake";
 import type { BaselineTaxTotals } from "../../contracts/baseline";
 
+import type { FilingStatus2025 } from "./federal";
+import { computeFederalBaseline2025 } from "./federal";
+
+import type { StateFilingStatus2025 } from "./stateTables";
+import { computeStateIncomeTaxFromString2025 } from "./state";
+
 /**
- * Baseline tax engine (v0 placeholder) — deterministic estimate.
+ * Baseline tax engine (2025) — deterministic estimate using:
+ * - Federal ordinary income brackets + standard deduction + simplified nonrefundable CTC
+ * - State tax via state.ts (hybrid_300k / flat / none, depending on tables)
  *
- * Purpose: unblock end-to-end flow (intake -> analyze -> impact -> email).
- * Replace with full Thread 2 baseline engine later.
- *
- * Contract output: BaselineTaxTotals
- * Expected downstream fields (used by impact engine): federalTax, stateTax, totalTax, taxableIncome
+ * Notes:
+ * - Uses a simplified "AGI proxy" based on intake fields (Stage-1 scope).
+ * - Treats all income as ordinary (no LTCG/QD modeling yet).
  */
 export async function runBaselineTaxEngine(intake: NormalizedIntake2025): Promise<BaselineTaxTotals> {
   const incomeW2 = numberOr0(intake.personal.income_excl_business);
@@ -21,21 +27,45 @@ export async function runBaselineTaxEngine(intake: NormalizedIntake2025): Promis
 
   const k401Ytd = numberOr0(intake.retirement.k401_employee_contrib_ytd);
 
-  // Very rough taxable income proxy
-  const gross = Math.max(0, incomeW2 + bizProfit);
-  const taxableIncome = Math.max(0, gross - k401Ytd);
+  // Stage-1 simplification: AGI proxy = W2 + business profit - employee 401(k) deferrals (YTD)
+  const agiProxy = Math.max(0, incomeW2 + bizProfit - k401Ytd);
 
-  // Simple federal estimate: blended effective rate by income band (placeholder)
-  const fedRate = estimateFederalEffectiveRate(taxableIncome, intake.personal.filing_status);
-  const federalTax = Math.max(0, taxableIncome * fedRate);
+  const fedStatus = toFederalStatus(intake.personal.filing_status);
+  const stStatus = toStateStatus(intake.personal.filing_status);
 
-  // Simple state estimate: a few known zero-income-tax states; otherwise flat placeholder rate
-  const stateRate = estimateStateEffectiveRate(intake.personal.state);
-  const stateTax = Math.max(0, taxableIncome * stateRate);
+  // Stage-1 simplification: treat all taxable income as ordinary (no preferential split)
+  const fed = computeFederalBaseline2025({
+    filingStatus: fedStatus,
+    agi: agiProxy,
+    taxableOrdinaryIncomeAfterDeduction: 0, // will be set below
+    taxablePreferentialIncomeAfterDeduction: 0,
+    qualifyingChildrenUnder17: Math.max(0, Math.floor(numberOr0(intake.personal.children_0_17))),
+  });
 
-  const totalTax = Math.max(0, federalTax + stateTax);
+  // IMPORTANT: computeFederalBaseline2025 computes taxableIncome via SD,
+  // but it expects the caller to supply the taxable split.
+  // For now, we treat ALL taxable income as ordinary.
+  const fed2 = computeFederalBaseline2025({
+    filingStatus: fedStatus,
+    agi: agiProxy,
+    taxableOrdinaryIncomeAfterDeduction: fed.taxableIncome,
+    taxablePreferentialIncomeAfterDeduction: 0,
+    qualifyingChildrenUnder17: Math.max(0, Math.floor(numberOr0(intake.personal.children_0_17))),
+  });
 
-  // Return shape expected by downstream engines
+  const taxableIncome = Math.max(0, fed2.taxableIncome);
+
+  const st = computeStateIncomeTaxFromString2025({
+    taxYear: 2025,
+    state: intake.personal.state,
+    filingStatus: stStatus,
+    taxableBase: taxableIncome, // proxy; ok for now
+  });
+
+  const federalTax = Math.max(0, roundToCents(fed2.incomeTaxAfterCTC));
+  const stateTax = Math.max(0, roundToCents(st.stateIncomeTax));
+  const totalTax = Math.max(0, roundToCents(federalTax + stateTax));
+
   const out: BaselineTaxTotals = {
     federalTax,
     stateTax,
@@ -52,53 +82,42 @@ function numberOr0(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
-/**
- * Placeholder effective federal rate curve.
- * This is NOT a bracket calculator — it's just a stable approximation for demo flow.
- */
-function estimateFederalEffectiveRate(taxableIncome: number, filingStatus: string): number {
-  // Tiny adjustment by filing status (purely heuristic)
-  const statusAdj =
-    filingStatus === "MARRIED_FILING_JOINTLY" ? -0.01 :
-    filingStatus === "HEAD_OF_HOUSEHOLD" ? -0.005 :
-    filingStatus === "MARRIED_FILING_SEPARATELY" ? 0.005 :
-    0;
-
-  // Piecewise effective rate (very rough)
-  let base =
-    taxableIncome <= 50_000 ? 0.08 :
-    taxableIncome <= 100_000 ? 0.11 :
-    taxableIncome <= 200_000 ? 0.16 :
-    taxableIncome <= 400_000 ? 0.20 :
-    taxableIncome <= 1_000_000 ? 0.26 :
-    0.30;
-
-  base += statusAdj;
-
-  // Clamp to sane bounds
-  return clamp(base, 0.05, 0.37);
+function roundToCents(x: number): number {
+  return Math.round((x + Number.EPSILON) * 100) / 100;
 }
 
-/**
- * Placeholder state effective rate:
- * - 0% for a few states with no wage income tax
- * - otherwise a flat estimate (can be refined later)
- */
-function estimateStateEffectiveRate(state: string): number {
-  const noIncomeTaxStates = new Set([
-    "AK", "FL", "NV", "SD", "TN", "TX", "WA", "WY",
-  ]);
-
-  if (noIncomeTaxStates.has(state)) return 0;
-
-  // New Hampshire only taxes interest/dividends (wage income tax effectively 0)
-  if (state === "NH") return 0;
-
-  // Default flat placeholder
-  // (Later: replace with your hybrid_300k model or full brackets)
-  return 0.05;
+function toFederalStatus(
+  s: NormalizedIntake2025["personal"]["filing_status"],
+): FilingStatus2025 {
+  switch (s) {
+    case "SINGLE":
+      return "single";
+    case "MARRIED_FILING_JOINTLY":
+      return "mfj";
+    case "MARRIED_FILING_SEPARATELY":
+      return "mfs";
+    case "HEAD_OF_HOUSEHOLD":
+      return "hoh";
+    default:
+      return "single";
+  }
 }
 
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, n));
+function toStateStatus(
+  s: NormalizedIntake2025["personal"]["filing_status"],
+): StateFilingStatus2025 {
+  // Most states follow the same filing status buckets for our simplified model.
+  // If your stateTables uses different enums, adjust this mapping once here.
+  switch (s) {
+    case "SINGLE":
+      return "single" as StateFilingStatus2025;
+    case "MARRIED_FILING_JOINTLY":
+      return "mfj" as StateFilingStatus2025;
+    case "MARRIED_FILING_SEPARATELY":
+      return "mfs" as StateFilingStatus2025;
+    case "HEAD_OF_HOUSEHOLD":
+      return "hoh" as StateFilingStatus2025;
+    default:
+      return "single" as StateFilingStatus2025;
+  }
 }
