@@ -9,14 +9,11 @@ import { computeStateIncomeTax2025 } from "./state";
 import type { StateFilingStatus2025 } from "./stateTables";
 
 /**
- * Baseline tax engine (2025-ish) — deterministic estimate using:
- * - Standard deduction (via computeTaxableIncome2025)
- * - 2025 ordinary brackets (via computeFederalBaseline2025)
- * - SIMPLE nonrefundable Child Tax Credit ($2,000 per child under 17)
- * - State engine (via computeStateIncomeTax2025)
- *
- * NOTE: We apply CTC here defensively in case the federal helper returns "before credits".
- * This keeps baseline stable and avoids silent mismatches.
+ * Baseline tax engine (2025) — deterministic estimate using:
+ * - AGI proxy: wages + business profit - employee 401(k)
+ * - Standard deduction (computeTaxableIncome2025)
+ * - 2025 ordinary brackets + simplified nonrefundable CTC w/ phaseout (computeFederalBaseline2025)
+ * - State engine (computeStateIncomeTax2025), using federal taxable income as taxable base proxy
  */
 export async function runBaselineTaxEngine(intake: NormalizedIntake2025): Promise<BaselineTaxTotals> {
   const incomeW2 = numberOr0(intake.personal.income_excl_business);
@@ -26,11 +23,13 @@ export async function runBaselineTaxEngine(intake: NormalizedIntake2025): Promis
 
   const k401Ytd = numberOr0(intake.retirement.k401_employee_contrib_ytd);
 
-  // Simple AGI proxy for v1: wages + business profit - employee 401(k) contribs
+  // AGI proxy for v1: wages + business profit - employee 401(k) contribs
   const agi = roundToCents(clampMin0(incomeW2 + bizProfit - k401Ytd));
 
   const fedStatus = toFederalStatus(intake.personal.filing_status);
   const stateStatus = toStateStatus(intake.personal.filing_status);
+
+  const kidsU17 = Math.max(0, Math.floor(numberOr0(intake.personal.children_0_17)));
 
   // Taxable income via standard deduction
   const { taxableIncome } = computeTaxableIncome2025({
@@ -38,33 +37,19 @@ export async function runBaselineTaxEngine(intake: NormalizedIntake2025): Promis
     agi,
   });
 
-  // Federal (ordinary only)
-  const fedAny: any = computeFederalBaseline2025({
+  // Federal (ordinary only) + simplified CTC w/ phaseout (nonrefundable)
+  const fed = computeFederalBaseline2025({
     filingStatus: fedStatus,
     agi,
     taxableOrdinaryIncomeAfterDeduction: taxableIncome,
     taxablePreferentialIncomeAfterDeduction: 0,
-    // still pass this through (harmless if federal ignores it)
-    qualifyingChildrenUnder17: Math.max(0, Math.floor(numberOr0(intake.personal.children_0_17))),
+    qualifyingChildrenUnder17: kidsU17,
   });
 
-  // Defensive: pick *some* numeric tax field from fed helper
-  const fedTaxRaw =
-    firstNumber(
-      fedAny?.incomeTaxAfterCTC,
-      fedAny?.incomeTax, // common
-      fedAny?.federalTax, // sometimes used
-      fedAny?.totalTax, // sometimes used
-      fedAny?.tax, // sometimes used
-    ) ?? 0;
+  // IMPORTANT: computeFederalBaseline2025 already applies the (nonrefundable) CTC.
+  const federalTax = roundToCents(clampMin0(fed.incomeTaxAfterCTC));
 
-  // SIMPLE nonrefundable CTC applied here (baseline simplification)
-  const kidsU17 = Math.max(0, Math.floor(numberOr0(intake.personal.children_0_17)));
-  const ctc = 2000 * kidsU17;
-
-  const federalTax = roundToCents(clampMin0(fedTaxRaw - Math.min(ctc, fedTaxRaw)));
-
-  // State (Stage-1 simplification: use federal taxable income as taxableBase proxy)
+  // State (use federal taxable income as taxableBase proxy)
   const stAny: any = computeStateIncomeTax2025({
     taxYear: 2025,
     state: intake.personal.state,

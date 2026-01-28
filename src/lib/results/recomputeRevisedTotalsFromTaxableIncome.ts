@@ -1,7 +1,10 @@
 // src/lib/results/recomputeRevisedTotalsFromTaxableIncome.ts
 
 import type { FilingStatus2025 } from "@/lib/tax/federal";
-import { computeFederalTaxFromTaxableIncome2025 } from "@/lib/tax/federal";
+import {
+  computeFederalBaseline2025,
+  getStandardDeduction2025,
+} from "@/lib/tax/federal";
 import { computeStateIncomeTaxFromString2025 } from "@/lib/tax/state";
 import type { StateFilingStatus2025 } from "@/lib/tax/stateTables";
 
@@ -51,24 +54,60 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
     | "HEAD_OF_HOUSEHOLD";
   state: string; // e.g. "CO"
   totalTaxableIncomeDelta: Range;
-}) {
-  const { baseline, filingStatus, state, totalTaxableIncomeDelta } = params;
 
-  const revisedTaxableIncome: Range = {
-    low: clampMin0(baseline.taxableIncome + totalTaxableIncomeDelta.low),
-    base: clampMin0(baseline.taxableIncome + totalTaxableIncomeDelta.base),
-    high: clampMin0(baseline.taxableIncome + totalTaxableIncomeDelta.high),
-  };
+  // ✅ NEW: needed for CTC phaseout
+  qualifyingChildrenUnder17: number;
+
+  /**
+   * Optional override if you later compute true AGI elsewhere.
+   * If not provided, we derive an AGI proxy as:
+   * baselineAgi ~= baseline.taxableIncome + standardDeduction(2025)
+   */
+  baselineAgiOverride?: number;
+}) {
+  const {
+    baseline,
+    filingStatus,
+    state,
+    totalTaxableIncomeDelta,
+    qualifyingChildrenUnder17,
+    baselineAgiOverride,
+  } = params;
 
   const fedStatus = FED_STATUS_MAP[filingStatus];
   const stStatus = STATE_STATUS_MAP[filingStatus];
 
-  function totalsForTaxableIncome(taxableIncome: number): Totals {
-    const federalTax = computeFederalTaxFromTaxableIncome2025({
+  const sd = getStandardDeduction2025(fedStatus);
+
+  // ✅ Derive an AGI proxy so CTC phaseout can be applied on revised scenarios too.
+  // Assumption: taxableIncome ~= AGI - standardDeduction (standard deduction only baseline)
+  const baselineAgi = typeof baselineAgiOverride === "number"
+    ? baselineAgiOverride
+    : clampMin0(baseline.taxableIncome + sd);
+
+  // Apply the same delta to AGI as taxable income delta (approximation).
+  const revisedAgi: Range = {
+    low: clampMin0(baselineAgi + totalTaxableIncomeDelta.low),
+    base: clampMin0(baselineAgi + totalTaxableIncomeDelta.base),
+    high: clampMin0(baselineAgi + totalTaxableIncomeDelta.high),
+  };
+
+  function totalsForAgi(agi: number): Totals {
+    // Compute taxable from AGI with standard deduction
+    const taxableIncome = clampMin0(agi - sd);
+
+    // Federal: ordinary-only baseline + CTC (phaseout + nonrefundable limit)
+    const fed = computeFederalBaseline2025({
       filingStatus: fedStatus,
-      taxableIncome,
+      agi,
+      taxableOrdinaryIncomeAfterDeduction: taxableIncome,
+      taxablePreferentialIncomeAfterDeduction: 0,
+      qualifyingChildrenUnder17,
     });
 
+    const federalTax = fed.incomeTaxAfterCTC;
+
+    // State: still based on taxable base (no CTC here)
     const stateOut = computeStateIncomeTaxFromString2025({
       taxYear: 2025,
       state,
@@ -83,9 +122,9 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
   }
 
   const revisedRange = {
-    low: totalsForTaxableIncome(revisedTaxableIncome.low),
-    base: totalsForTaxableIncome(revisedTaxableIncome.base),
-    high: totalsForTaxableIncome(revisedTaxableIncome.high),
+    low: totalsForAgi(revisedAgi.low),
+    base: totalsForAgi(revisedAgi.base),
+    high: totalsForAgi(revisedAgi.high),
   };
 
   const totalTaxDelta: Range = {
@@ -94,7 +133,6 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
     high: baseline.totalTax - revisedRange.high.totalTax,
   };
 
-  // Shape matches what your UI already reads: revisedTotals.revised
   return {
     baseline,
     revised: revisedRange.base,

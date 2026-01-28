@@ -285,12 +285,21 @@ export async function POST(req: Request) {
         taxableIncome: (baseline as any).taxableIncome ?? 0,
       };
 
-      const recomputed = recomputeRevisedTotalsFromTaxableIncome({
-        baseline: baselineTotals,
-        filingStatus: intake.personal.filing_status,
-        state: intake.personal.state,
-        totalTaxableIncomeDelta: totalTaxableIncomeDelta as any,
-      });
+      const incomeW2 = (intake as any)?.personal?.income_excl_business ?? 0;
+const bizProfit = (intake as any)?.business?.has_business ? ((intake as any)?.business?.net_profit ?? 0) : 0;
+const k401Ytd = (intake as any)?.retirement?.k401_employee_contrib_ytd ?? 0;
+const baselineAgiOverride = Math.max(0, incomeW2 + bizProfit - k401Ytd);
+
+const recomputed = recomputeRevisedTotalsFromTaxableIncome({
+  baseline: baselineTotals,
+  filingStatus: intake.personal.filing_status,
+  state: intake.personal.state,
+  totalTaxableIncomeDelta: totalTaxableIncomeDelta as any,
+
+  qualifyingChildrenUnder17: intake.personal.children_0_17 ?? 0,
+  baselineAgiOverride,
+});
+     
 
       (impact as any).revisedTotals = recomputed;
     }
