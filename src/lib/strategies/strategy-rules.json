@@ -24,9 +24,9 @@
         "rule_group": "g1",
         "field": "business.entity_type",
         "op": "in",
-        "value": ["sole_prop", "partnership", "s_corp"],
+        "value": ["SOLE_PROP", "PARTNERSHIP", "S_CORP"],
         "required": true,
-        "description": "Entity type must be sole_prop, partnership, or s_corp"
+        "description": "Entity type must be SOLE_PROP, PARTNERSHIP, or S_CORP"
       },
   
       {

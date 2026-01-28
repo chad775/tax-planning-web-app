@@ -103,15 +103,15 @@ function main(): void {
    */
 
   const ALL_STRATEGIES = [
-    "AUGUSTA",
-    "HIRING_CHILDREN",
-    "MEDICAL_REIMBURSEMENT",
-    "401K",
-    "CASH_BALANCE_PLAN",
-    "SHORT_TERM_RENTAL",
-    "RTU_PROGRAM",
-    "LEVERAGED_CHARITABLE",
-    "FILM_CREDIT",
+    "augusta_loophole",
+    "hiring_children",
+    "medical_reimbursement",
+    "k401",
+    "cash_balance_plan",
+    "short_term_rental",
+    "rtu_program",
+    "leveraged_charitable",
+    "film_credits",
   ] as const;
 
   // ------------------------------
@@ -145,12 +145,12 @@ function main(): void {
 
     const byId = new Map(out.impacts.map((i) => [i.strategyId, i]));
 
-    assert((byId.get("RTU_PROGRAM")?.flags ?? []).includes("APPLIED") === false, "RTU must not be applied below 350k");
+    assert((byId.get("rtu_program")?.flags ?? []).includes("APPLIED") === false, "RTU must not be applied below 350k");
     assert(
-      (byId.get("LEVERAGED_CHARITABLE")?.flags ?? []).includes("APPLIED") === false,
+      (byId.get("leveraged_charitable")?.flags ?? []).includes("APPLIED") === false,
       "Leveraged must not be applied below 833k",
     );
-    assert((byId.get("FILM_CREDIT")?.flags ?? []).includes("APPLIED") === false, "Film must not be applied below 500k");
+    assert((byId.get("film_credits")?.flags ?? []).includes("APPLIED") === false, "Film must not be applied below 500k");
 
     assert(out.revisedTotals.revised.taxableIncome >= 0, "Taxable income must stay >= 0");
   }
@@ -188,10 +188,10 @@ function main(): void {
 
     const byId = new Map(out.impacts.map((i) => [i.strategyId, i]));
 
-    assert((byId.get("RTU_PROGRAM")?.flags ?? []).includes("APPLIED"), "RTU should apply at 750k");
-    assert((byId.get("FILM_CREDIT")?.flags ?? []).includes("APPLIED"), "Film should apply at 750k");
+    assert((byId.get("rtu_program")?.flags ?? []).includes("APPLIED"), "RTU should apply at 750k");
+    assert((byId.get("film_credits")?.flags ?? []).includes("APPLIED"), "Film should apply at 750k");
     assert(
-      (byId.get("LEVERAGED_CHARITABLE")?.flags ?? []).includes("APPLIED") === false,
+      (byId.get("leveraged_charitable")?.flags ?? []).includes("APPLIED") === false,
       "Leveraged must not apply below 833k",
     );
   }
@@ -240,8 +240,8 @@ function main(): void {
   {
     const intake = buildBaseIntake({ kids: 1, hasBiz: true, k401ytd: 0 });
     const evaluations: StrategyEvaluationResult[] = [
-      { strategyId: "AUGUSTA", status: "ELIGIBLE", reasons: [] },
-      { strategyId: "401K", status: "POTENTIAL", reasons: [], missingFields: ["retirement.k401_employee_contrib_ytd"] },
+      { strategyId: "augusta_loophole", status: "ELIGIBLE", reasons: [] },
+      { strategyId: "k401", status: "POTENTIAL", reasons: [], missingFields: ["retirement.k401_employee_contrib_ytd"] },
     ];
 
     const baseline = {
@@ -269,10 +269,10 @@ function main(): void {
     const byIdYes = new Map(outApply.impacts.map((i) => [i.strategyId, i]));
 
     assert(
-      (byIdNo.get("401K")?.flags ?? []).includes("APPLIED") === false,
-      "401K POTENTIAL must not apply when applyPotential=false",
+      (byIdNo.get("k401")?.flags ?? []).includes("APPLIED") === false,
+      "k401 POTENTIAL must not apply when applyPotential=false",
     );
-    assert((byIdYes.get("401K")?.flags ?? []).includes("APPLIED"), "401K POTENTIAL should apply when applyPotential=true");
+    assert((byIdYes.get("k401")?.flags ?? []).includes("APPLIED"), "k401 POTENTIAL should apply when applyPotential=true");
 
     const tiNo = outNoApply.revisedTotals.revised.taxableIncome;
     const tiYes = outApply.revisedTotals.revised.taxableIncome;

@@ -65,15 +65,15 @@ async function main() {
           net_income: 200000,
           num_employees: 3,
         },
-        strategies_in_use: ["AUGUSTA", "MERP"],
+        strategies_in_use: ["augusta_loophole", "medical_reimbursement"],
       },
       baseline: {
         total_tax: 112345.67,
         taxable_income: 410000,
       },
       strategies: [
-        { id: "AUGUSTA", status: "APPLIED", delta_tax: -1200 },
-        { id: "MERP", status: "POTENTIAL", delta_tax: -3500 },
+        { id: "augusta_loophole", status: "APPLIED", delta_tax: -1200 },
+        { id: "medical_reimbursement", status: "POTENTIAL", delta_tax: -3500 },
       ],
       after: {
         total_tax: 107645.67,

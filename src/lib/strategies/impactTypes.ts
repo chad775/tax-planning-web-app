@@ -9,6 +9,8 @@
  * - Impacts are returned as structured JSON (no prose).
  */
 
+import type { StrategyId } from "@/contracts/strategyIds";
+
 /** Canonical filing statuses supported by the normalized intake schema (tax year 2025). */
 export type FilingStatus =
   | "SINGLE"
@@ -82,8 +84,8 @@ export type EntityType =
 /** Strategy evaluation status from Thread 3. */
 export type StrategyEvaluationStatus = "ELIGIBLE" | "NOT_ELIGIBLE" | "POTENTIAL";
 
-/** A strategy identifier (must match ids used in strategy.rules.json). */
-export type StrategyId = string;
+/** A strategy identifier (imported from contracts - canonical source of truth). */
+export type { StrategyId };
 
 /** Standard low/base/high estimate triple. */
 export interface Range3 {

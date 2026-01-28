@@ -23,17 +23,17 @@ export const IMPACT_LEVELS = [
   {
     level: 1,
     description: "Easy tax-free cashflow from business",
-    strategies: ["AUGUSTA", "HIRING_CHILDREN", "MEDICAL_REIMBURSEMENT"] as const,
+    strategies: ["augusta_loophole", "hiring_children", "medical_reimbursement"] as const,
   },
   {
     level: 2,
     description: "Familiar capacity-based strategies",
-    strategies: ["401K", "SHORT_TERM_RENTAL"] as const,
+    strategies: ["k401", "short_term_rental"] as const,
   },
   {
     level: 3,
     description: "High-end complex strategies",
-    strategies: ["CASH_BALANCE_PLAN", "RTU_PROGRAM", "LEVERAGED_CHARITABLE", "FILM_CREDIT"] as const,
+    strategies: ["cash_balance_plan", "rtu_program", "leveraged_charitable", "film_credits"] as const,
   },
 ] as const;
 
@@ -44,10 +44,10 @@ export const IMPACT_ORDER: ReadonlyArray<StrategyId> = IMPACT_LEVELS.flatMap((l)
 /**
  * Income gates (baseline.taxableIncome proxy).
  */
-const INCOME_GATES: Readonly<Record<StrategyId, { minTaxableIncome: number }>> = {
-  RTU_PROGRAM: { minTaxableIncome: 350_000 },
-  LEVERAGED_CHARITABLE: { minTaxableIncome: 833_000 },
-  FILM_CREDIT: { minTaxableIncome: 500_000 },
+const INCOME_GATES: Readonly<Partial<Record<StrategyId, { minTaxableIncome: number }>>> = {
+  rtu_program: { minTaxableIncome: 350_000 },
+  leveraged_charitable: { minTaxableIncome: 833_000 },
+  film_credits: { minTaxableIncome: 500_000 },
 } as const;
 
 type ImpactFlag = NonNullable<StrategyImpactEstimate["flags"]>[number];

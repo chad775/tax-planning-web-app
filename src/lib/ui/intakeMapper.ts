@@ -24,10 +24,10 @@ export function mapUiToNormalizedIntake(ui: UiIntakeFormState): IntakeMapperOk |
     business: {
       has_business: !!ui.hasBusiness,
       // IMPORTANT:
-      // - Your strategy rules expect lowercase canonical values like "s_corp"
-      // - Your UI uses uppercase enum values like "S_CORP"
-      // So we normalize here to match rules.
-      entity_type: ui.hasBusiness ? normalizeEntityType(ui.businessEntityType) : "unknown",
+      // - Contract schema expects uppercase canonical values like "S_CORP"
+      // - Strategy rules now use uppercase values to match contract
+      // - UI may use various formats, so we normalize here to match contract
+      entity_type: ui.hasBusiness ? normalizeEntityType(ui.businessEntityType) : "UNKNOWN",
       employees_count: ui.hasBusiness ? toInt(ui.employeesCount) : 0,
       net_profit: ui.hasBusiness ? toMoney(ui.businessNetProfit) : 0,
     },
@@ -59,44 +59,44 @@ export function mapUiToNormalizedIntake(ui: UiIntakeFormState): IntakeMapperOk |
 
 function normalizeEntityType(
   v: unknown,
-): "sole_prop" | "s_corp" | "c_corp" | "partnership" | "llc" | "unknown" {
-  if (typeof v !== "string") return "unknown";
+): "SOLE_PROP" | "S_CORP" | "C_CORP" | "PARTNERSHIP" | "LLC" | "UNKNOWN" {
+  if (typeof v !== "string") return "UNKNOWN";
 
-  // Normalize to lowercase snake_case so it matches strategy-rules.json values
-  const s = v.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  // Normalize to uppercase snake_case to match contract schema
+  const s = v.trim().toUpperCase().replace(/[\s-]+/g, "_");
 
   switch (s) {
-    case "sole_prop":
-    case "soleproprietor":
-    case "sole_proprietor":
-    case "soleproprietorship":
-    case "sole_proprietorship":
-      return "sole_prop";
+    case "SOLE_PROP":
+    case "SOLEPROPRIETOR":
+    case "SOLE_PROPRIETOR":
+    case "SOLEPROPRIETORSHIP":
+    case "SOLE_PROPRIETORSHIP":
+      return "SOLE_PROP";
 
-    case "partnership":
-    case "partner":
-      return "partnership";
+    case "PARTNERSHIP":
+    case "PARTNER":
+      return "PARTNERSHIP";
 
-    case "s_corp":
-    case "scorp":
-    case "s_corporation":
-    case "s-corp":
-      return "s_corp";
+    case "S_CORP":
+    case "SCORP":
+    case "S_CORPORATION":
+    case "S-CORP":
+      return "S_CORP";
 
-    case "c_corp":
-    case "ccorp":
-    case "c_corporation":
-    case "c-corp":
-      return "c_corp";
+    case "C_CORP":
+    case "CCORP":
+    case "C_CORPORATION":
+    case "C-CORP":
+      return "C_CORP";
 
-    case "llc":
-      return "llc";
+    case "LLC":
+      return "LLC";
 
-    case "unknown":
-      return "unknown";
+    case "UNKNOWN":
+      return "UNKNOWN";
 
     default:
-      return "unknown";
+      return "UNKNOWN";
   }
 }
 
