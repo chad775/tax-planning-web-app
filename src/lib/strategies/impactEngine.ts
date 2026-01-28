@@ -15,46 +15,21 @@ import {
   clampTaxLiabilityDeltaToBaseline,
   clampTaxableIncomeDeltaToBaseline,
 } from "./impactModels";
-
-/**
- * Impact application order (deterministic).
- */
-export const IMPACT_LEVELS = [
-  {
-    level: 1,
-    description: "Easy tax-free cashflow from business",
-    strategies: ["augusta_loophole", "hiring_children", "medical_reimbursement"] as const,
-  },
-  {
-    level: 2,
-    description: "Familiar capacity-based strategies",
-    strategies: ["k401", "short_term_rental"] as const,
-  },
-  {
-    level: 3,
-    description: "High-end complex strategies",
-    strategies: ["cash_balance_plan", "rtu_program", "leveraged_charitable", "film_credits"] as const,
-  },
-] as const;
-
-export const IMPACT_ORDER: ReadonlyArray<StrategyId> = IMPACT_LEVELS.flatMap((l) =>
-  Array.from(l.strategies),
-);
-
-/**
- * Income gates (baseline.taxableIncome proxy).
- */
-const INCOME_GATES: Readonly<Partial<Record<StrategyId, { minTaxableIncome: number }>>> = {
-  rtu_program: { minTaxableIncome: 350_000 },
-  leveraged_charitable: { minTaxableIncome: 833_000 },
-  film_credits: { minTaxableIncome: 500_000 },
-} as const;
+import { STRATEGY_CATALOG } from "./strategyCatalog";
 
 type ImpactFlag = NonNullable<StrategyImpactEstimate["flags"]>[number];
 
-/**
- * Ensure flags are always present (required under exactOptionalPropertyTypes)
- */
+function clampMin0(x: number): number {
+  return x < 0 ? 0 : x;
+}
+
+function makeZeroRange(): Range3 {
+  return { low: 0, base: 0, high: 0 };
+}
+function addRange(a: Range3, b: Range3): Range3 {
+  return { low: a.low + b.low, base: a.base + b.base, high: a.high + b.high };
+}
+
 function withFlags(
   impact: StrategyImpactEstimate,
   flags: ReadonlyArray<ImpactFlag>,
@@ -63,14 +38,6 @@ function withFlags(
     ...impact,
     flags: flags as NonNullable<StrategyImpactEstimate["flags"]>,
   };
-}
-
-function makeZeroRange(): Range3 {
-  return { low: 0, base: 0, high: 0 };
-}
-
-function addRange(a: Range3, b: Range3): Range3 {
-  return { low: a.low + b.low, base: a.base + b.base, high: a.high + b.high };
 }
 
 function isEligibleToApplyImpact(
@@ -83,9 +50,10 @@ function isEligibleToApplyImpact(
 }
 
 function incomeGateSatisfied(strategyId: StrategyId, baselineTaxableIncome: number): boolean {
-  const gate = INCOME_GATES[strategyId];
-  if (!gate) return true;
-  return baselineTaxableIncome >= gate.minTaxableIncome;
+  const meta = STRATEGY_CATALOG[strategyId];
+  const min = meta?.minBaselineTaxableIncome;
+  if (!min) return true;
+  return baselineTaxableIncome >= min;
 }
 
 function applyBaseTaxLiabilityDelta(totals: BaselineTaxTotals, baseDelta: number): BaselineTaxTotals {
@@ -99,8 +67,8 @@ function applyBaseTaxLiabilityDelta(totals: BaselineTaxTotals, baseDelta: number
     return { ...totals, federalTax: 0, stateTax: 0, totalTax: 0 };
   }
 
-  const federalShare = federalBefore / totalBefore;
-  const stateShare = stateBefore / totalBefore;
+  const federalShare = totalBefore > 0 ? federalBefore / totalBefore : 0;
+  const stateShare = totalBefore > 0 ? stateBefore / totalBefore : 0;
 
   const federalAfter = Math.max(0, federalBefore + cappedDelta * federalShare);
   const stateAfter = Math.max(0, stateBefore + cappedDelta * stateShare);
@@ -119,23 +87,22 @@ function applyBaseTaxableIncomeDelta(totals: BaselineTaxTotals, baseDelta: numbe
   return { ...totals, taxableIncome: taxableBefore + cappedDelta };
 }
 
-function buildOrderedStrategyIds(allStrategyIds: ReadonlyArray<StrategyId>): ReadonlyArray<StrategyId> {
-  const set = new Set(allStrategyIds);
-  const ordered: StrategyId[] = [];
-
-  for (const id of IMPACT_ORDER) {
-    if (set.has(id)) ordered.push(id);
-    set.delete(id);
-  }
-
-  return ordered.concat(Array.from(set).sort((a, b) => a.localeCompare(b)));
+function sortByDisplayOrder(ids: StrategyId[]): StrategyId[] {
+  return ids.sort((a, b) => {
+    const da = STRATEGY_CATALOG[a]?.displayOrder ?? 9999;
+    const db = STRATEGY_CATALOG[b]?.displayOrder ?? 9999;
+    return da - db || a.localeCompare(b);
+  });
 }
 
-/**
- * Main deterministic impact engine
- */
-export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput {
-  const { intake, baseline, strategyEvaluations, applyPotential } = input;
+function applyStrategies(params: {
+  intake: ImpactEngineInput["intake"];
+  baseline: BaselineTaxTotals;
+  strategyEvaluations: ImpactEngineInput["strategyEvaluations"];
+  applyPotential: boolean;
+  strategyIdsToApply: ReadonlyArray<StrategyId>;
+}): { impacts: StrategyImpactEstimate[]; revisedTotals: RevisedTaxTotals } {
+  const { intake, baseline, strategyEvaluations, applyPotential, strategyIdsToApply } = params;
 
   const impactsUnordered: StrategyImpactEstimate[] = strategyEvaluations.map((ev) =>
     buildImpactEstimateForStrategy({
@@ -150,8 +117,6 @@ export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput {
     impactsUnordered.map((i) => [i.strategyId, i]),
   );
 
-  const orderedStrategyIds = buildOrderedStrategyIds(strategyEvaluations.map((e) => e.strategyId));
-
   let revised: BaselineTaxTotals = {
     federalTax: Math.max(0, baseline.federalTax),
     stateTax: Math.max(0, baseline.stateTax),
@@ -162,11 +127,21 @@ export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput {
   let totalTaxableIncomeDelta: Range3 = makeZeroRange();
   let totalTaxDelta: Range3 = makeZeroRange();
 
-  for (const strategyId of orderedStrategyIds) {
+  const applySet = new Set(strategyIdsToApply);
+
+  for (const ev of strategyEvaluations) {
+    const strategyId = ev.strategyId;
     const impact = impactsById.get(strategyId);
     if (!impact) continue;
 
     const flags = new Set<ImpactFlag>((impact.flags ?? []) as ReadonlyArray<ImpactFlag>);
+
+    // If it's not in the apply set, mark as not applied (but keep eligibility in the payload)
+    if (!applySet.has(strategyId)) {
+      flags.add("NOT_APPLIED_POTENTIAL");
+      impactsById.set(strategyId, withFlags(impact, Array.from(flags)));
+      continue;
+    }
 
     if (!isEligibleToApplyImpact(impact.status, applyPotential)) {
       flags.add(impact.status === "POTENTIAL" ? "NOT_APPLIED_POTENTIAL" : "NOT_APPLIED_NOT_ELIGIBLE");
@@ -177,33 +152,28 @@ export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput {
     if (!incomeGateSatisfied(strategyId, baseline.taxableIncome)) {
       flags.add("NOT_APPLIED_POTENTIAL");
 
-      // Build assumptions deterministically and with correct literal typing.
-      const gate = INCOME_GATES[strategyId];
+      const meta = STRATEGY_CATALOG[strategyId];
       let assumptions: ReadonlyArray<ImpactAssumption> = impact.assumptions;
 
-      if (gate) {
-        const incomeGateAssumption: ImpactAssumption = {
-          id: "INCOME_GATE_NOT_MET",
-          category: "CAP",
-          value: gate.minTaxableIncome,
-        };
-        assumptions = [...impact.assumptions, incomeGateAssumption];
+      if (meta?.minBaselineTaxableIncome) {
+        assumptions = [
+          ...assumptions,
+          {
+            id: "INCOME_GATE_NOT_MET",
+            category: "CAP",
+            value: meta.minBaselineTaxableIncome,
+          },
+        ];
       }
 
       impactsById.set(
         strategyId,
-        withFlags(
-          {
-            ...impact,
-            needsConfirmation: true,
-            assumptions,
-          },
-          Array.from(flags),
-        ),
+        withFlags({ ...impact, needsConfirmation: true, assumptions }, Array.from(flags)),
       );
       continue;
     }
 
+    // taxable income deltas
     if (impact.taxableIncomeDelta) {
       const clamped = clampTaxableIncomeDeltaToBaseline(revised.taxableIncome, impact.taxableIncomeDelta);
 
@@ -218,20 +188,12 @@ export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput {
         flags.add("CAPPED_BY_TAXABLE_INCOME");
       }
 
-      impactsById.set(
-        strategyId,
-        withFlags(
-          {
-            ...impact,
-            taxableIncomeDelta: clamped,
-          },
-          Array.from(flags),
-        ),
-      );
+      impactsById.set(strategyId, withFlags({ ...impact, taxableIncomeDelta: clamped }, Array.from(flags)));
     }
 
     const afterIncome = impactsById.get(strategyId)!;
 
+    // tax liability deltas
     if (afterIncome.taxLiabilityDelta) {
       const clamped = clampTaxLiabilityDeltaToBaseline(revised.totalTax, afterIncome.taxLiabilityDelta);
 
@@ -246,16 +208,7 @@ export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput {
         flags.add("CAPPED_BY_TAX_LIABILITY");
       }
 
-      impactsById.set(
-        strategyId,
-        withFlags(
-          {
-            ...afterIncome,
-            taxLiabilityDelta: clamped,
-          },
-          Array.from(flags),
-        ),
-      );
+      impactsById.set(strategyId, withFlags({ ...afterIncome, taxLiabilityDelta: clamped }, Array.from(flags)));
     }
 
     const finalImpact = impactsById.get(strategyId)!;
@@ -268,12 +221,90 @@ export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput {
     .map((e) => impactsById.get(e.strategyId))
     .filter((x): x is StrategyImpactEstimate => Boolean(x));
 
-  const revisedTotals: RevisedTaxTotals = {
-    baseline,
-    revised,
-    totalTaxDelta,
-    totalTaxableIncomeDelta,
+  return {
+    impacts,
+    revisedTotals: {
+      baseline,
+      revised,
+      totalTaxDelta,
+      totalTaxableIncomeDelta,
+    },
   };
+}
 
-  return { impacts, revisedTotals };
+/**
+ * NEW: bucket-aware impact engine
+ * - Core = Tier 1 + Tier 2 (if eligible+gate)
+ * - What-if = each Tier 3 solo on top of core
+ */
+export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput & {
+  core: { impacts: StrategyImpactEstimate[]; revisedTotals: RevisedTaxTotals; appliedStrategyIds: StrategyId[] };
+  whatIf: Record<
+    StrategyId,
+    { impacts: StrategyImpactEstimate[]; revisedTotals: RevisedTaxTotals; deltaFromCore: Range3 }
+  >;
+} {
+  const { intake, baseline, strategyEvaluations, applyPotential } = input;
+
+  const allIds = strategyEvaluations.map((e) => e.strategyId);
+
+  const tier1 = allIds.filter((id) => STRATEGY_CATALOG[id]?.tier === 1);
+  const tier2 = allIds.filter((id) => STRATEGY_CATALOG[id]?.tier === 2);
+  const tier3 = allIds.filter((id) => STRATEGY_CATALOG[id]?.tier === 3);
+
+  // Core apply set = tier1 + tier2 (auto-apply candidates)
+  const coreApply = sortByDisplayOrder(
+    [...tier1, ...tier2].filter((id) => STRATEGY_CATALOG[id]?.autoApplyWhenEligible),
+  );
+
+  const core = applyStrategies({
+    intake,
+    baseline,
+    strategyEvaluations,
+    applyPotential,
+    strategyIdsToApply: coreApply,
+  });
+
+  // What-if: each tier3 strategy solo on top of core
+  const whatIf: Record<
+    StrategyId,
+    { impacts: StrategyImpactEstimate[]; revisedTotals: RevisedTaxTotals; deltaFromCore: Range3 }
+  > = {} as any;
+
+  for (const id of sortByDisplayOrder([...tier3])) {
+    // apply = core + this one
+    const soloRun = applyStrategies({
+      intake,
+      baseline,
+      strategyEvaluations,
+      applyPotential,
+      strategyIdsToApply: [...coreApply, id],
+    });
+
+    const deltaFromCore: Range3 = {
+      low: core.revisedTotals.totalTaxDelta.low - soloRun.revisedTotals.totalTaxDelta.low,
+      base: core.revisedTotals.totalTaxDelta.base - soloRun.revisedTotals.totalTaxDelta.base,
+      high: core.revisedTotals.totalTaxDelta.high - soloRun.revisedTotals.totalTaxDelta.high,
+    };
+
+    whatIf[id] = {
+      impacts: soloRun.impacts,
+      revisedTotals: soloRun.revisedTotals,
+      deltaFromCore,
+    };
+  }
+
+  // Back-compat: keep original fields
+  // For "impacts" return the core impacts (what the UI currently expects)
+  // For revisedTotals return the core revised totals (your "after strategies" number)
+  return {
+    impacts: core.impacts,
+    revisedTotals: core.revisedTotals,
+    core: {
+      impacts: core.impacts,
+      revisedTotals: core.revisedTotals,
+      appliedStrategyIds: coreApply,
+    },
+    whatIf,
+  };
 }

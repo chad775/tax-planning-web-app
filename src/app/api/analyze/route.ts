@@ -15,8 +15,18 @@ import { runBaselineTaxEngine } from "../../../lib/tax/baselineEngine";
 import { evaluateStrategies } from "../../../lib/strategies/evaluator";
 import { runImpactEngine } from "../../../lib/strategies/impactEngine";
 
-// ✅ NEW: recompute revised totals from taxable income deltas
+// ✅ recompute revised totals from taxable income deltas
 import { recomputeRevisedTotalsFromTaxableIncome } from "../../../lib/results/recomputeRevisedTotalsFromTaxableIncome";
+
+// ✅ Federal helpers for step-by-step breakdown
+import {
+  computeFederalBaseline2025,
+  getStandardDeduction2025,
+  type FilingStatus2025,
+} from "../../../lib/tax/federal";
+
+import { computeStateIncomeTax2025 } from "../../../lib/tax/state";
+import { asStateCode, type StateCode } from "../../../lib/tax/stateTables";
 
 // ✅ JSON import (bundled by Next/Vercel)
 import strategyRulesJson from "../../../lib/strategies/strategy-rules.json";
@@ -73,6 +83,61 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
+function clampMin0(x: number): number {
+  return x < 0 ? 0 : x;
+}
+
+function roundToCents(x: number): number {
+  return Math.round((x + Number.EPSILON) * 100) / 100;
+}
+
+function toFederalStatus(status: NormalizedIntake2025["personal"]["filing_status"]): FilingStatus2025 {
+  switch (status) {
+    case "SINGLE":
+      return "single";
+    case "MARRIED_FILING_JOINTLY":
+      return "mfj";
+    case "MARRIED_FILING_SEPARATELY":
+      return "mfs";
+    case "HEAD_OF_HOUSEHOLD":
+      return "hoh";
+    default:
+      return "single";
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Strategy tiers (local, deterministic) */
+/* ------------------------------------------------------------------ */
+/**
+ * These match your src/lib/strategies/impactEngine.ts IMPACT_LEVELS:
+ * level 1: ["augusta_loophole","hiring_children","medical_reimbursement"]
+ * level 2: ["k401","short_term_rental"]
+ * level 3: ["cash_balance_plan","rtu_program","leveraged_charitable","film_credits"]
+ */
+type Tier = 1 | 2 | 3;
+
+const STRATEGY_TIER_MAP: Readonly<Record<string, Tier>> = {
+  // Tier 1
+  augusta_loophole: 1,
+  hiring_children: 1,
+  medical_reimbursement: 1,
+
+  // Tier 2
+  k401: 2,
+  short_term_rental: 2,
+
+  // Tier 3
+  cash_balance_plan: 3,
+  rtu_program: 3,
+  leveraged_charitable: 3,
+  film_credits: 3,
+} as const;
+
+function getTier(strategyId: string): Tier {
+  return STRATEGY_TIER_MAP[strategyId] ?? 3;
+}
+
 /* ------------------------------------------------------------------ */
 /* OpenAI output normalizer (STRICT SCHEMA SAFE) */
 /* ------------------------------------------------------------------ */
@@ -110,19 +175,12 @@ function normalizeNarrativeCandidate(obj: any): any {
       delete out.applies;
 
       if (typeof out.what_it_is !== "string" || out.what_it_is.trim().length < 1) {
-        out.what_it_is = out.strategy_id
-          ? `Tax strategy: ${out.strategy_id}`
-          : `Tax strategy #${idx + 1}`;
+        out.what_it_is = out.strategy_id ? `Tax strategy: ${out.strategy_id}` : `Tax strategy #${idx + 1}`;
       }
 
-      if (
-        typeof out.why_it_applies_or_not !== "string" ||
-        out.why_it_applies_or_not.trim().length < 1
-      ) {
+      if (typeof out.why_it_applies_or_not !== "string" || out.why_it_applies_or_not.trim().length < 1) {
         out.why_it_applies_or_not =
-          typeof s?.explanation === "string"
-            ? s.explanation
-            : "Eligibility depends on your specific facts.";
+          typeof s?.explanation === "string" ? s.explanation : "Eligibility depends on your specific facts.";
       }
 
       return out;
@@ -145,6 +203,97 @@ function getImpactParts(impact: ImpactEngineOutput) {
     revised,
     totalTaxDelta,
     impacts: Array.isArray((impact as any)?.impacts) ? (impact as any).impacts : [],
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Tax breakdown helpers (baseline + revised) */
+/* ------------------------------------------------------------------ */
+
+function computeTaxBreakdown(params: {
+  filingStatus: NormalizedIntake2025["personal"]["filing_status"];
+  state: string;
+  childrenUnder17: number;
+
+  incomeW2: number;
+  businessProfit: number;
+  k401EmployeeYtd: number;
+
+  // If provided, we recompute with this AGI directly (for revised scenarios).
+  agiOverride?: number;
+}) {
+  const fedStatus = toFederalStatus(params.filingStatus);
+  const stateCodeRaw = asStateCode(params.state);
+if (!stateCodeRaw) {
+  throw new Error(`Invalid state code: ${params.state}`);
+}
+const stateCode: StateCode = stateCodeRaw;
+
+
+  const grossIncome = roundToCents(clampMin0(params.incomeW2 + params.businessProfit));
+  const aboveLine401k = roundToCents(clampMin0(params.k401EmployeeYtd));
+
+  const agi = roundToCents(
+    clampMin0(typeof params.agiOverride === "number" ? params.agiOverride : grossIncome - aboveLine401k),
+  );
+
+  const standardDeduction = getStandardDeduction2025(fedStatus);
+  const taxableIncome = roundToCents(clampMin0(agi - standardDeduction));
+
+  // Federal (ordinary-only) with CTC phaseout + nonrefundable limit
+  const fed = computeFederalBaseline2025({
+    filingStatus: fedStatus,
+    agi,
+    taxableOrdinaryIncomeAfterDeduction: taxableIncome,
+    taxablePreferentialIncomeAfterDeduction: 0,
+    qualifyingChildrenUnder17: Math.max(0, Math.floor(params.childrenUnder17)),
+  });
+
+  const incomeTaxBeforeCredits = roundToCents(fed.incomeTaxBeforeCredits ?? 0);
+  const ctcAvailable = roundToCents(fed.ctcAvailable ?? 0);
+  const ctcUsed = roundToCents(fed.ctcUsedNonrefundable ?? 0);
+  const ctcUnused = roundToCents(fed.ctcUnused ?? 0);
+  const federalTax = roundToCents(fed.incomeTaxAfterCTC ?? incomeTaxBeforeCredits);
+
+  // State (still uses taxable income proxy)
+  const stateStatus = params.filingStatus as any;
+  const stAny: any = computeStateIncomeTax2025({
+    taxYear: 2025,
+    state: stateCode,
+    filingStatus: stateStatus,
+    taxableBase: taxableIncome,
+  });
+
+  const stateTax = roundToCents(clampMin0(stAny?.stateIncomeTax ?? stAny?.tax ?? stAny?.stateTax ?? 0));
+  const totalTax = roundToCents(clampMin0(federalTax + stateTax));
+
+  return {
+    gross_income: grossIncome,
+    adjustments: {
+      k401_employee_contrib_ytd: aboveLine401k,
+    },
+    agi,
+    standard_deduction: standardDeduction,
+    taxable_income: taxableIncome,
+    federal: {
+      income_tax_before_credits: incomeTaxBeforeCredits,
+      ctc: {
+        available: ctcAvailable,
+        used_nonrefundable: ctcUsed,
+        unused: ctcUnused,
+        phaseout_rules: "Phaseout starts at $200,000 single / $400,000 MFJ. Reduce $50 per $1,000 over.",
+      },
+      tax_after_credits: federalTax,
+    },
+    state: {
+      tax: stateTax,
+      taxable_base_proxy: taxableIncome,
+    },
+    totals: {
+      federalTax,
+      stateTax,
+      totalTax,
+    },
   };
 }
 
@@ -272,11 +421,20 @@ export async function POST(req: Request) {
       applyPotential,
     } as ImpactEngineInput) as ImpactEngineOutput;
 
-    // ✅ FIX: recompute revisedTotals from taxable income delta range, then overwrite impact.revisedTotals
+    // pull delta range for recompute + revised breakdown
     const totalTaxableIncomeDelta =
       (impact as any)?.revisedTotals?.totalTaxableIncomeDelta ??
       (impact as any)?.revisedTotals?.totalTaxableIncome_delta;
 
+    // Intake inputs (used for breakdown)
+    const incomeW2 = (intake as any)?.personal?.income_excl_business ?? 0;
+    const bizProfit = (intake as any)?.business?.has_business ? ((intake as any)?.business?.net_profit ?? 0) : 0;
+    const k401Ytd = (intake as any)?.retirement?.k401_employee_contrib_ytd ?? 0;
+
+    // Baseline AGI proxy used everywhere (matches baselineEngine)
+    const baselineAgiOverride = Math.max(0, incomeW2 + bizProfit - k401Ytd);
+
+    // ✅ recompute revised totals so federal/state tax reflect CTC + phaseout
     if (totalTaxableIncomeDelta && typeof totalTaxableIncomeDelta === "object") {
       const baselineTotals = {
         federalTax: (baseline as any).federalTax ?? 0,
@@ -285,24 +443,131 @@ export async function POST(req: Request) {
         taxableIncome: (baseline as any).taxableIncome ?? 0,
       };
 
-      const incomeW2 = (intake as any)?.personal?.income_excl_business ?? 0;
-const bizProfit = (intake as any)?.business?.has_business ? ((intake as any)?.business?.net_profit ?? 0) : 0;
-const k401Ytd = (intake as any)?.retirement?.k401_employee_contrib_ytd ?? 0;
-const baselineAgiOverride = Math.max(0, incomeW2 + bizProfit - k401Ytd);
-
-const recomputed = recomputeRevisedTotalsFromTaxableIncome({
-  baseline: baselineTotals,
-  filingStatus: intake.personal.filing_status,
-  state: intake.personal.state,
-  totalTaxableIncomeDelta: totalTaxableIncomeDelta as any,
-
-  qualifyingChildrenUnder17: intake.personal.children_0_17 ?? 0,
-  baselineAgiOverride,
-});
-     
+      const recomputed = recomputeRevisedTotalsFromTaxableIncome({
+        baseline: baselineTotals,
+        filingStatus: intake.personal.filing_status,
+        state: intake.personal.state,
+        totalTaxableIncomeDelta: totalTaxableIncomeDelta as any,
+        qualifyingChildrenUnder17: intake.personal.children_0_17 ?? 0,
+        baselineAgiOverride,
+      });
 
       (impact as any).revisedTotals = recomputed;
     }
+
+    /* ---------------- NEW: breakdown fields ---------------- */
+
+    const baseline_breakdown = computeTaxBreakdown({
+      filingStatus: intake.personal.filing_status,
+      state: intake.personal.state,
+      childrenUnder17: intake.personal.children_0_17 ?? 0,
+      incomeW2,
+      businessProfit: bizProfit,
+      k401EmployeeYtd: k401Ytd,
+      agiOverride: baselineAgiOverride,
+    });
+
+    const revisedBaseDelta =
+      totalTaxableIncomeDelta && typeof (totalTaxableIncomeDelta as any).base === "number"
+        ? (totalTaxableIncomeDelta as any).base
+        : 0;
+
+    const revisedAgiBase = clampMin0(baselineAgiOverride + revisedBaseDelta);
+
+    const revised_breakdown = computeTaxBreakdown({
+      filingStatus: intake.personal.filing_status,
+      state: intake.personal.state,
+      childrenUnder17: intake.personal.children_0_17 ?? 0,
+      incomeW2,
+      businessProfit: bizProfit,
+      k401EmployeeYtd: k401Ytd,
+      agiOverride: revisedAgiBase,
+    });
+
+    /* ---------------- NEW: buckets + tier-3 what-if ---------------- */
+
+    const impactsList: any[] = Array.isArray((impact as any)?.impacts) ? (impact as any).impacts : [];
+
+    const appliedTier12 = impactsList.filter((i: any) => {
+      const id = String(i?.strategyId ?? i?.strategy_id ?? "");
+      const tier = getTier(id);
+      const flags: string[] = Array.isArray(i?.flags) ? i.flags : [];
+      return (tier === 1 || tier === 2) && flags.includes("APPLIED");
+    });
+
+    const tier3 = impactsList.filter((i: any) => {
+      const id = String(i?.strategyId ?? i?.strategy_id ?? "");
+      return getTier(id) === 3;
+    });
+
+    const sumAppliedTier12BaseDelta = appliedTier12.reduce((acc: number, i: any) => {
+      const base = i?.taxableIncomeDelta?.base;
+      return acc + (typeof base === "number" ? base : 0);
+    }, 0);
+
+    const opportunity_what_if = tier3.map((i: any) => {
+      const id = String(i?.strategyId ?? i?.strategy_id ?? "");
+      const base = i?.taxableIncomeDelta?.base;
+      const tier3Delta = typeof base === "number" ? base : 0;
+
+      const whatIfAgi = clampMin0(baselineAgiOverride + sumAppliedTier12BaseDelta + tier3Delta);
+
+      const what_if_breakdown = computeTaxBreakdown({
+        filingStatus: intake.personal.filing_status,
+        state: intake.personal.state,
+        childrenUnder17: intake.personal.children_0_17 ?? 0,
+        incomeW2,
+        businessProfit: bizProfit,
+        k401EmployeeYtd: k401Ytd,
+        agiOverride: whatIfAgi,
+      });
+
+      return {
+        strategyId: id,
+        tier: 3 as const,
+        taxableIncomeDeltaBase: tier3Delta,
+        totals: what_if_breakdown.totals,
+        breakdown: what_if_breakdown,
+      };
+    });
+
+    const strategy_buckets = {
+      applied: impactsList
+        .map((i: any) => {
+          const id = String(i?.strategyId ?? i?.strategy_id ?? "");
+          return {
+            strategyId: id,
+            tier: getTier(id),
+            flags: Array.isArray(i?.flags) ? i.flags : [],
+            status: i?.status ?? null,
+            needsConfirmation: i?.needsConfirmation ?? null,
+            taxableIncomeDelta: i?.taxableIncomeDelta ?? null,
+            taxLiabilityDelta: i?.taxLiabilityDelta ?? null,
+            model: i?.model ?? null,
+            assumptions: Array.isArray(i?.assumptions) ? i.assumptions : [],
+          };
+        })
+        .filter((x: any) => x.tier === 1 || x.tier === 2),
+
+      opportunities: impactsList
+        .map((i: any) => {
+          const id = String(i?.strategyId ?? i?.strategy_id ?? "");
+          return {
+            strategyId: id,
+            tier: getTier(id),
+            flags: Array.isArray(i?.flags) ? i.flags : [],
+            status: i?.status ?? null,
+            needsConfirmation: i?.needsConfirmation ?? null,
+            taxableIncomeDelta: i?.taxableIncomeDelta ?? null,
+            taxLiabilityDelta: i?.taxLiabilityDelta ?? null,
+            model: i?.model ?? null,
+            assumptions: Array.isArray(i?.assumptions) ? i.assumptions : [],
+          };
+        })
+        .filter((x: any) => x.tier === 3),
+
+      opportunity_what_if,
+    };
 
     // LLM
     const ctx = buildAnalysisContext({
@@ -337,6 +602,13 @@ const recomputed = recomputeRevisedTotalsFromTaxableIncome({
         strategy_evaluation: evaluation,
         impact_summary: impact,
         narrative,
+
+        // ✅ NEW: steps
+        baseline_breakdown,
+        revised_breakdown,
+
+        // ✅ NEW: buckets for UI
+        strategy_buckets,
       },
       { status: 200 },
     );

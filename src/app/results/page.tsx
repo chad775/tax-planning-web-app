@@ -25,6 +25,47 @@ type StrategyRowVM = {
   assumptions: Array<{ id: string; category: string; value: unknown }>;
 };
 
+/* ------------------------------------------------------------------ */
+/* Strategy tiers + ordering (UI-only catalog)                         */
+/* ------------------------------------------------------------------ */
+
+type StrategyTier = 1 | 2 | 3;
+
+const STRATEGY_META: Record<
+  string,
+  { tier: StrategyTier; order: number; title: string; showAs: "applied" | "opportunity" }
+> = {
+  // Tier 1 – always apply if eligible
+  augusta_loophole: { tier: 1, order: 10, title: "Augusta Rule", showAs: "applied" },
+  medical_reimbursement: { tier: 1, order: 20, title: "Medical Reimbursement Plan", showAs: "applied" },
+  k401: { tier: 1, order: 30, title: "401(k) Deferral", showAs: "applied" },
+
+  // Tier 2 – apply above income limits (when eligible)
+  hiring_children: { tier: 2, order: 40, title: "Hiring Children", showAs: "applied" },
+  cash_balance_plan: { tier: 2, order: 50, title: "Cash Balance Plan", showAs: "applied" },
+
+  // Tier 3 – show as “what-if opportunities”
+  short_term_rental: { tier: 3, order: 80, title: "Short-Term Rental + Cost Seg", showAs: "opportunity" },
+  leveraged_charitable: { tier: 3, order: 90, title: "Leveraged Charitable", showAs: "opportunity" },
+  rtu_program: { tier: 3, order: 95, title: "RTU Program", showAs: "opportunity" },
+  film_credits: { tier: 3, order: 100, title: "Film Credits", showAs: "opportunity" },
+};
+
+function getStrategyMeta(id: string) {
+  return (
+    STRATEGY_META[id] ?? {
+      tier: 3 as const,
+      order: 9999,
+      title: humanizeStrategyId(id),
+      showAs: "opportunity" as const,
+    }
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Page                                                               */
+/* ------------------------------------------------------------------ */
+
 export default function ResultsPage() {
   const router = useRouter();
   const [raw, setRaw] = useState<JsonRecord | null>(null);
@@ -142,111 +183,40 @@ export default function ResultsPage() {
         )}
       </section>
 
+      {/* ------------------------------------------------------------------ */}
+      {/* Strategies (bucketed)                                              */}
+      {/* ------------------------------------------------------------------ */}
+
       <section style={cardStyle}>
-        <h2 style={h2Style}>Strategy results</h2>
+        <h2 style={h2Style}>Strategies</h2>
+
+        <h3 style={{ ...h3Style, marginTop: 0 }}>Applied strategies (Tier 1–2)</h3>
         <p style={{ marginTop: 0, color: "#444" }}>
-          Strategies are shown with eligibility, whether you marked them as “already in use”, and any estimated impact.
+          These are the strategies we treat as “stacking” together to produce your “After strategies” estimate.
         </p>
 
         <div style={{ display: "grid", gap: 12 }}>
-          {vm.strategies.map((s) => (
-            <div key={s.id} style={strategyCardStyle}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontWeight: 900, fontSize: 16 }}>{s.title}</div>
-                  <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Tag
-                      text={humanizeEligibility(s.eligibilityStatus)}
-                      tone={eligibilityTone(s.eligibilityStatus)}
-                    />
-                    {s.alreadyInUse && <Tag text="Already in use" tone="neutral" />}
-                    {s.needsConfirmation && <Tag text="Needs confirmation" tone="warn" />}
-                    {s.impactModel ? <Tag text={`Model: ${s.impactModel}`} tone="neutral" /> : null}
-                  </div>
-                </div>
+          {vm.strategies
+            .filter((s) => getStrategyMeta(s.id).showAs === "applied")
+            .map((s) => (
+              <StrategyCard key={s.id} raw={raw} s={s} />
+            ))}
+        </div>
 
-                <button
-                  onClick={() => copyToClipboard(JSON.stringify(buildStrategyDebugBlob(raw, s.id), null, 2))}
-                  style={tinyButtonStyle}
-                  title="Copy strategy debug JSON"
-                >
-                  Copy debug
-                </button>
-              </div>
+        <div style={{ marginTop: 18 }}>
+          <h3 style={h3Style}>Opportunities to consider (Tier 3)</h3>
+          <p style={{ marginTop: 0, color: "#444" }}>
+            These are shown as “what-if” opportunities. When we show savings for Tier 3, each one should be calculated
+            as if it’s the only additional strategy added on top of Tier 1–2 (not combined with other Tier 3 items).
+          </p>
 
-              {s.whatItIs && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={smallTitleStyle}>What it is</div>
-                  <p style={paragraphStyle}>{s.whatItIs}</p>
-                </div>
-              )}
-
-              {s.why && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={smallTitleStyle}>Why it applies (or not)</div>
-                  <p style={paragraphStyle}>{s.why}</p>
-                </div>
-              )}
-
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                {s.taxableIncomeDelta && (
-                  <div>
-                    <div style={smallTitleStyle}>Taxable income delta</div>
-                    <KeyValues
-                      items={{
-                        low: money(s.taxableIncomeDelta.low),
-                        base: money(s.taxableIncomeDelta.base),
-                        high: money(s.taxableIncomeDelta.high),
-                      }}
-                    />
-                  </div>
-                )}
-
-                {s.taxLiabilityDelta && (
-                  <div>
-                    <div style={smallTitleStyle}>Tax liability delta</div>
-                    <KeyValues
-                      items={{
-                        low: money(s.taxLiabilityDelta.low),
-                        base: money(s.taxLiabilityDelta.base),
-                        high: money(s.taxLiabilityDelta.high),
-                      }}
-                    />
-                  </div>
-                )}
-
-                {(s.flags.length > 0 || s.assumptions.length > 0) && (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {s.flags.length > 0 && (
-                      <div>
-                        <div style={smallTitleStyle}>Flags</div>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {s.flags.map((f) => (
-                            <Tag key={f} text={f} tone="neutral" />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {s.assumptions.length > 0 && (
-                      <div>
-                        <div style={smallTitleStyle}>Assumptions</div>
-                        <div style={{ display: "grid", gap: 6 }}>
-                          {s.assumptions.map((a) => (
-                            <div key={a.id} style={assumptionRowStyle}>
-                              <div style={{ fontWeight: 800 }}>{a.id}</div>
-                              <div style={{ color: "#444" }}>{a.category}</div>
-                              <div style={{ color: "#111" }}>{formatValue(a.value)}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+          <div style={{ display: "grid", gap: 12 }}>
+            {vm.strategies
+              .filter((s) => getStrategyMeta(s.id).showAs === "opportunity")
+              .map((s) => (
+                <StrategyCard key={s.id} raw={raw} s={s} />
+              ))}
+          </div>
         </div>
       </section>
 
@@ -290,7 +260,157 @@ export default function ResultsPage() {
   );
 }
 
-/* ----------------------------- view-model build ---------------------------- */
+/* ------------------------------------------------------------------ */
+/* Components                                                         */
+/* ------------------------------------------------------------------ */
+
+function StrategyCard(props: { raw: JsonRecord; s: StrategyRowVM }) {
+  const { raw, s } = props;
+  const meta = getStrategyMeta(s.id);
+
+  return (
+    <div style={strategyCardStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontWeight: 900, fontSize: 16 }}>{s.title}</div>
+          <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Tag text={humanizeEligibility(s.eligibilityStatus)} tone={eligibilityTone(s.eligibilityStatus)} />
+            <Tag text={`Tier ${meta.tier}`} tone="neutral" />
+            {s.alreadyInUse && <Tag text="Already in use" tone="neutral" />}
+            {s.needsConfirmation && <Tag text="Needs confirmation" tone="warn" />}
+            {s.impactModel ? <Tag text={`Model: ${s.impactModel}`} tone="neutral" /> : null}
+          </div>
+        </div>
+
+        <button
+          onClick={() => copyToClipboard(JSON.stringify(buildStrategyDebugBlob(raw, s.id), null, 2))}
+          style={tinyButtonStyle}
+          title="Copy strategy debug JSON"
+        >
+          Copy debug
+        </button>
+      </div>
+
+      {s.whatItIs && (
+        <div style={{ marginTop: 10 }}>
+          <div style={smallTitleStyle}>What it is</div>
+          <p style={paragraphStyle}>{s.whatItIs}</p>
+        </div>
+      )}
+
+      {s.why && (
+        <div style={{ marginTop: 10 }}>
+          <div style={smallTitleStyle}>Why it applies (or not)</div>
+          <p style={paragraphStyle}>{s.why}</p>
+        </div>
+      )}
+
+      <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+        {s.taxableIncomeDelta && (
+          <div>
+            <div style={smallTitleStyle}>Taxable income delta</div>
+            <KeyValues
+              items={{
+                low: money(s.taxableIncomeDelta.low),
+                base: money(s.taxableIncomeDelta.base),
+                high: money(s.taxableIncomeDelta.high),
+              }}
+            />
+          </div>
+        )}
+
+        {s.taxLiabilityDelta && (
+          <div>
+            <div style={smallTitleStyle}>Tax liability delta</div>
+            <KeyValues
+              items={{
+                low: money(s.taxLiabilityDelta.low),
+                base: money(s.taxLiabilityDelta.base),
+                high: money(s.taxLiabilityDelta.high),
+              }}
+            />
+          </div>
+        )}
+
+        {(s.flags.length > 0 || s.assumptions.length > 0) && (
+          <div style={{ display: "grid", gap: 8 }}>
+            {s.flags.length > 0 && (
+              <div>
+                <div style={smallTitleStyle}>Flags</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {s.flags.map((f) => (
+                    <Tag key={f} text={f} tone="neutral" />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {s.assumptions.length > 0 && (
+              <div>
+                <div style={smallTitleStyle}>Assumptions</div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {s.assumptions.map((a) => (
+                    <div key={a.id} style={assumptionRowStyle}>
+                      <div style={{ fontWeight: 800 }}>{a.id}</div>
+                      <div style={{ color: "#444" }}>{a.category}</div>
+                      <div style={{ color: "#111" }}>{formatValue(a.value)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Pill(props: { label: string; value: string }) {
+  return (
+    <div style={pillStyle}>
+      <div style={{ fontSize: 12, color: "#555", fontWeight: 800 }}>{props.label}</div>
+      <div style={{ fontSize: 14, color: "#111", fontWeight: 900 }}>{props.value}</div>
+    </div>
+  );
+}
+
+function Tag(props: { text: string; tone: "good" | "bad" | "warn" | "neutral" }) {
+  const toneStyle =
+    props.tone === "good"
+      ? { border: "1px solid #117a2a", background: "#f0fff4", color: "#117a2a" }
+      : props.tone === "bad"
+        ? { border: "1px solid #b00020", background: "#fff5f5", color: "#b00020" }
+        : props.tone === "warn"
+          ? { border: "1px solid #946200", background: "#fff9e6", color: "#946200" }
+          : { border: "1px solid #ccc", background: "#fafafa", color: "#333" };
+
+  return <span style={{ ...tagStyle, ...toneStyle }}>{props.text}</span>;
+}
+
+function KeyValues(props: { items: Record<string, unknown> | null }) {
+  const entries = props.items ? Object.entries(props.items) : [];
+  if (entries.length === 0) return <div style={{ color: "#555" }}>—</div>;
+
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <tbody>
+        {entries.map(([k, v]) => (
+          <tr key={k}>
+            <td style={{ padding: "6px 8px", borderTop: "1px solid #eee", width: "45%", color: "#333" }}>{k}</td>
+            <td style={{ padding: "6px 8px", borderTop: "1px solid #eee", color: "#111", fontWeight: 700 }}>
+              {formatValue(v)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* View-model build                                                   */
+/* ------------------------------------------------------------------ */
 
 function buildViewModel(raw: JsonRecord | null) {
   if (!raw) return null;
@@ -338,38 +458,31 @@ function buildViewModel(raw: JsonRecord | null) {
   const narrativeExplanations = asArray(narrative?.["strategy_explanations"]) ?? [];
 
   const evalById = new Map<string, JsonRecord>();
-for (const item of evalAll) {
-  const r = asRecord(item);
-  if (!r) continue;
+  for (const item of evalAll) {
+    const r = asRecord(item);
+    if (!r) continue;
 
-  const id = asString(r["strategy_id"]);
-  if (id) evalById.set(id, r);
-}
+    const id = asString(r["strategy_id"]);
+    if (id) evalById.set(id, r);
+  }
 
-const impactById = new Map<string, JsonRecord>();
-for (const item of impactImpacts) {
-  const r = asRecord(item);
-  if (!r) continue;
+  const impactById = new Map<string, JsonRecord>();
+  for (const item of impactImpacts) {
+    const r = asRecord(item);
+    if (!r) continue;
 
-  const id =
-    asString(r["strategyId"]) ??
-    asString(r["strategy_id"]);
+    const id = asString(r["strategyId"]) ?? asString(r["strategy_id"]);
+    if (id) impactById.set(id, r);
+  }
 
-  if (id) impactById.set(id, r);
-}
+  const explById = new Map<string, JsonRecord>();
+  for (const item of narrativeExplanations) {
+    const r = asRecord(item);
+    if (!r) continue;
 
-const explById = new Map<string, JsonRecord>();
-for (const item of narrativeExplanations) {
-  const r = asRecord(item);
-  if (!r) continue;
-
-  const id =
-    asString(r["strategy_id"]) ??
-    asString(r["strategyId"]) ??
-    asString(r["id"]);
-
-  if (id) explById.set(id, r);
-}
+    const id = asString(r["strategy_id"]) ?? asString(r["strategyId"]) ?? asString(r["id"]);
+    if (id) explById.set(id, r);
+  }
 
   // union of IDs from any source
   const idSet = new Set<string>();
@@ -379,13 +492,18 @@ for (const item of narrativeExplanations) {
   for (const id of strategiesInUse) idSet.add(id);
 
   const strategies: StrategyRowVM[] = Array.from(idSet)
-    .sort((a, b) => a.localeCompare(b))
+    .sort((a, b) => {
+      const ma = getStrategyMeta(a);
+      const mb = getStrategyMeta(b);
+      return ma.order - mb.order || a.localeCompare(b);
+    })
     .map((id) => {
       const ev = evalById.get(id);
       const imp = impactById.get(id);
       const ex = explById.get(id);
 
-      const eligibilityStatus = (asString(ev?.["status"]) as StrategyRowVM["eligibilityStatus"]) ?? "UNKNOWN";
+      const eligibilityStatus =
+        (asString(ev?.["status"]) as StrategyRowVM["eligibilityStatus"]) ?? "UNKNOWN";
 
       const impactModel = asString(imp?.["model"]) ?? null;
       const needsConfirmation = asBoolean(imp?.["needsConfirmation"]);
@@ -396,11 +514,7 @@ for (const item of narrativeExplanations) {
       const flags = asStringArray(imp?.["flags"]) ?? [];
       const assumptions = normalizeAssumptions(asArray(imp?.["assumptions"]) ?? []);
 
-      const whatItIs =
-        asString(ex?.["what_it_is"]) ??
-        asString(ex?.["whatItIs"]) ??
-        asString(ex?.["title"]) ??
-        null;
+      const whatItIs = asString(ex?.["what_it_is"]) ?? asString(ex?.["whatItIs"]) ?? asString(ex?.["title"]) ?? null;
 
       const why =
         asString(ex?.["why_it_applies_or_not"]) ??
@@ -411,7 +525,7 @@ for (const item of narrativeExplanations) {
 
       return {
         id,
-        title: humanizeStrategyId(id),
+        title: getStrategyMeta(id).title,
         eligibilityStatus,
         alreadyInUse: strategiesInUse.has(id),
         whatItIs,
@@ -445,55 +559,9 @@ for (const item of narrativeExplanations) {
   };
 }
 
-/* ----------------------------- render helpers ----------------------------- */
-
-function Pill(props: { label: string; value: string }) {
-  return (
-    <div style={pillStyle}>
-      <div style={{ fontSize: 12, color: "#555", fontWeight: 800 }}>{props.label}</div>
-      <div style={{ fontSize: 14, color: "#111", fontWeight: 900 }}>{props.value}</div>
-    </div>
-  );
-}
-
-function Tag(props: { text: string; tone: "good" | "bad" | "warn" | "neutral" }) {
-  const toneStyle =
-    props.tone === "good"
-      ? { border: "1px solid #117a2a", background: "#f0fff4", color: "#117a2a" }
-      : props.tone === "bad"
-        ? { border: "1px solid #b00020", background: "#fff5f5", color: "#b00020" }
-        : props.tone === "warn"
-          ? { border: "1px solid #946200", background: "#fff9e6", color: "#946200" }
-          : { border: "1px solid #ccc", background: "#fafafa", color: "#333" };
-
-  return (
-    <span style={{ ...tagStyle, ...toneStyle }}>
-      {props.text}
-    </span>
-  );
-}
-
-function KeyValues(props: { items: Record<string, unknown> | null }) {
-  const entries = props.items ? Object.entries(props.items) : [];
-  if (entries.length === 0) return <div style={{ color: "#555" }}>—</div>;
-
-  return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-      <tbody>
-        {entries.map(([k, v]) => (
-          <tr key={k}>
-            <td style={{ padding: "6px 8px", borderTop: "1px solid #eee", width: "45%", color: "#333" }}>{k}</td>
-            <td style={{ padding: "6px 8px", borderTop: "1px solid #eee", color: "#111", fontWeight: 700 }}>
-              {formatValue(v)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-/* ------------------------------ data helpers ------------------------------ */
+/* ------------------------------------------------------------------ */
+/* Data helpers                                                       */
+/* ------------------------------------------------------------------ */
 
 function asRecord(v: unknown): JsonRecord | null {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
@@ -538,9 +606,6 @@ function deepGet(obj: unknown, path: string[]): unknown {
 function normalizeTotals(v: JsonRecord | null): Record<string, unknown> | null {
   if (!v) return null;
 
-  // Accept either camelCase baseline totals or other shapes.
-  // Your baseline currently looks like:
-  // { federalTax, stateTax, totalTax, taxableIncome }
   const federalTax = asNumber(v["federalTax"]) ?? asNumber(v["federal_tax_total"]) ?? null;
   const stateTax = asNumber(v["stateTax"]) ?? asNumber(v["state_tax_total"]) ?? null;
   const totalTax = asNumber(v["totalTax"]) ?? asNumber(v["total_tax"]) ?? null;
@@ -552,11 +617,9 @@ function normalizeTotals(v: JsonRecord | null): Record<string, unknown> | null {
   if (totalTax !== null) out["totalTax"] = money(totalTax);
   if (taxableIncome !== null) out["taxableIncome"] = money(taxableIncome);
 
-  // Keep anything else (best effort)
   for (const [k, vv] of Object.entries(v)) {
     if (k in out) continue;
     if (k === "baseline" || k === "revised") continue;
-    // don’t explode UI with huge nested stuff
     if (typeof vv === "object") continue;
     out[k] = vv;
   }
@@ -586,14 +649,11 @@ function normalizeAssumptions(v: unknown[]): Array<{ id: string; category: strin
 }
 
 function safeMaybeJsonToPrettyText(s: string): string {
-  // Your narrative.baseline_tax_summary is currently a JSON string (not ideal, but OK).
-  // We try to parse it; if it parses, show it as a readable sentence-ish block.
   try {
     const obj = JSON.parse(s) as unknown;
     const r = asRecord(obj);
     if (!r) return s;
 
-    // Pretty print key fields if present
     const parts: string[] = [];
     const fed = asNumber(r["federal_tax_total"]);
     const st = asNumber(r["state_tax_total"]);
@@ -680,7 +740,9 @@ async function copyToClipboard(text: string) {
   }
 }
 
-/* --------------------------------- styles -------------------------------- */
+/* ------------------------------------------------------------------ */
+/* Styles                                                             */
+/* ------------------------------------------------------------------ */
 
 const cardStyle: React.CSSProperties = {
   border: "1px solid #ddd",
