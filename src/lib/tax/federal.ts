@@ -179,8 +179,6 @@ export function computeFederalIncomeTax2025(params: {
   const thresholds = LTCG_THRESHOLDS_2025[status];
   const totalTaxable = ordinary + pref;
 
-  // Determine how much preferential income falls into the 0%, 15%, 20% bands,
-  // accounting for the ordinary "stack" occupying the lower taxable income space.
   const zeroBandCapRemaining = clampMin0(thresholds.zeroUpTo - ordinary);
   const amtAt0 = Math.min(pref, zeroBandCapRemaining);
 
@@ -189,8 +187,6 @@ export function computeFederalIncomeTax2025(params: {
 
   const amtAt20 = clampMin0(pref - amtAt0 - amtAt15);
 
-  // Defensive: Ensure stacking doesn't allocate beyond total taxable (should not happen).
-  // This keeps deterministic stability if upstream passes inconsistent components.
   const prefAllocated = amtAt0 + amtAt15 + amtAt20;
   const prefCapped = prefAllocated > pref ? pref : prefAllocated;
 
@@ -198,8 +194,6 @@ export function computeFederalIncomeTax2025(params: {
 
   const totalIncomeTaxBeforeCredits = roundToCents(ordinaryTax + preferentialTax);
 
-  // If prefCapped < pref, we still tax based on allocated; caller should ensure consistency.
-  // totalTaxable is unused currently but kept for clarity/future expansion.
   void totalTaxable;
   void prefCapped;
 
@@ -224,7 +218,6 @@ export function computeSimplifiedCTCAvailable2025(params: {
 
   if (over <= 0) return maxCredit;
 
-  // Reduce by $50 for each $1,000 (or part thereof) over the threshold.
   const increments = Math.ceil(over / 1_000);
   const reduction = increments * CTC_PHASEOUT_REDUCTION_PER_1000;
 
@@ -319,4 +312,16 @@ export function computeFederalBaseline2025(params: {
     incomeTaxAfterCTC: ctcApplied.incomeTaxAfterCTC,
     ctcUnused: ctcApplied.ctcUnused,
   };
+}
+
+/**
+ * NEW: Simplified federal tax from taxable income (ordinary only).
+ * Used to re-tax revised totals when we only have taxable income deltas.
+ */
+export function computeFederalTaxFromTaxableIncome2025(params: {
+  filingStatus: FilingStatus2025;
+  taxableIncome: number;
+}): number {
+  const ordinary = clampMin0(params.taxableIncome);
+  return computeBracketTax(ordinary, ORDINARY_BRACKETS_2025[params.filingStatus]);
 }

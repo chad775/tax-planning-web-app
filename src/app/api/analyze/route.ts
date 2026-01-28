@@ -15,6 +15,9 @@ import { runBaselineTaxEngine } from "../../../lib/tax/baselineEngine";
 import { evaluateStrategies } from "../../../lib/strategies/evaluator";
 import { runImpactEngine } from "../../../lib/strategies/impactEngine";
 
+// ✅ NEW: recompute revised totals from taxable income deltas
+import { recomputeRevisedTotalsFromTaxableIncome } from "../../../lib/results/recomputeRevisedTotalsFromTaxableIncome";
+
 // ✅ JSON import (bundled by Next/Vercel)
 import strategyRulesJson from "../../../lib/strategies/strategy-rules.json";
 
@@ -268,6 +271,29 @@ export async function POST(req: Request) {
       })),
       applyPotential,
     } as ImpactEngineInput) as ImpactEngineOutput;
+
+    // ✅ FIX: recompute revisedTotals from taxable income delta range, then overwrite impact.revisedTotals
+    const totalTaxableIncomeDelta =
+      (impact as any)?.revisedTotals?.totalTaxableIncomeDelta ??
+      (impact as any)?.revisedTotals?.totalTaxableIncome_delta;
+
+    if (totalTaxableIncomeDelta && typeof totalTaxableIncomeDelta === "object") {
+      const baselineTotals = {
+        federalTax: (baseline as any).federalTax ?? 0,
+        stateTax: (baseline as any).stateTax ?? 0,
+        totalTax: (baseline as any).totalTax ?? 0,
+        taxableIncome: (baseline as any).taxableIncome ?? 0,
+      };
+
+      const recomputed = recomputeRevisedTotalsFromTaxableIncome({
+        baseline: baselineTotals,
+        filingStatus: intake.personal.filing_status,
+        state: intake.personal.state,
+        totalTaxableIncomeDelta: totalTaxableIncomeDelta as any,
+      });
+
+      (impact as any).revisedTotals = recomputed;
+    }
 
     // LLM
     const ctx = buildAnalysisContext({
