@@ -1,10 +1,7 @@
 // src/lib/results/recomputeRevisedTotalsFromTaxableIncome.ts
 
 import type { FilingStatus2025 } from "@/lib/tax/federal";
-import {
-  computeFederalBaseline2025,
-  getStandardDeduction2025,
-} from "@/lib/tax/federal";
+import { computeFederalBaseline2025, getStandardDeduction2025 } from "@/lib/tax/federal";
 import { computeStateIncomeTaxFromString2025 } from "@/lib/tax/state";
 import type { StateFilingStatus2025 } from "@/lib/tax/stateTables";
 
@@ -21,6 +18,10 @@ export type Range = { low: number; base: number; high: number };
 
 function clampMin0(x: number): number {
   return x < 0 ? 0 : x;
+}
+
+function roundToCents(x: number): number {
+  return Math.round((x + Number.EPSILON) * 100) / 100;
 }
 
 // Intake uses uppercase enums; tax engines use lowercase.
@@ -55,11 +56,11 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
   state: string; // e.g. "CO"
   totalTaxableIncomeDelta: Range;
 
-  // ✅ NEW: needed for CTC phaseout
+  // Needed for CTC phaseout
   qualifyingChildrenUnder17: number;
 
   /**
-   * Optional override if you later compute true AGI elsewhere.
+   * Optional override if you compute true AGI elsewhere.
    * If not provided, we derive an AGI proxy as:
    * baselineAgi ~= baseline.taxableIncome + standardDeduction(2025)
    */
@@ -79,13 +80,17 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
 
   const sd = getStandardDeduction2025(fedStatus);
 
-  // ✅ Derive an AGI proxy so CTC phaseout can be applied on revised scenarios too.
-  // Assumption: taxableIncome ~= AGI - standardDeduction (standard deduction only baseline)
-  const baselineAgi = typeof baselineAgiOverride === "number"
-    ? baselineAgiOverride
-    : clampMin0(baseline.taxableIncome + sd);
+  // Normalize kids
+  const kidsU17 = Math.max(0, Math.floor(qualifyingChildrenUnder17 ?? 0));
 
-  // Apply the same delta to AGI as taxable income delta (approximation).
+  // Derive AGI proxy so CTC phaseout can be applied on revised scenarios too.
+  // Assumption: taxableIncome ~= AGI - standardDeduction (standard deduction only baseline)
+  const baselineAgi =
+    typeof baselineAgiOverride === "number" && Number.isFinite(baselineAgiOverride)
+      ? clampMin0(baselineAgiOverride)
+      : clampMin0(baseline.taxableIncome + sd);
+
+  // Approx: apply same delta to AGI as taxable income delta
   const revisedAgi: Range = {
     low: clampMin0(baselineAgi + totalTaxableIncomeDelta.low),
     base: clampMin0(baselineAgi + totalTaxableIncomeDelta.base),
@@ -93,21 +98,18 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
   };
 
   function totalsForAgi(agi: number): Totals {
-    // Compute taxable from AGI with standard deduction
     const taxableIncome = clampMin0(agi - sd);
 
-    // Federal: ordinary-only baseline + CTC (phaseout + nonrefundable limit)
     const fed = computeFederalBaseline2025({
       filingStatus: fedStatus,
       agi,
       taxableOrdinaryIncomeAfterDeduction: taxableIncome,
       taxablePreferentialIncomeAfterDeduction: 0,
-      qualifyingChildrenUnder17,
+      qualifyingChildrenUnder17: kidsU17,
     });
 
-    const federalTax = fed.incomeTaxAfterCTC;
+    const federalTax = roundToCents(clampMin0(fed.incomeTaxAfterCTC));
 
-    // State: still based on taxable base (no CTC here)
     const stateOut = computeStateIncomeTaxFromString2025({
       taxYear: 2025,
       state,
@@ -115,10 +117,15 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
       taxableBase: taxableIncome,
     });
 
-    const stateTax = stateOut.stateIncomeTax;
-    const totalTax = federalTax + stateTax;
+    const stateTax = roundToCents(clampMin0(stateOut.stateIncomeTax));
+    const totalTax = roundToCents(clampMin0(federalTax + stateTax));
 
-    return { federalTax, stateTax, totalTax, taxableIncome };
+    return {
+      federalTax,
+      stateTax,
+      totalTax,
+      taxableIncome: roundToCents(taxableIncome),
+    };
   }
 
   const revisedRange = {
@@ -128,9 +135,9 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
   };
 
   const totalTaxDelta: Range = {
-    low: baseline.totalTax - revisedRange.low.totalTax,
-    base: baseline.totalTax - revisedRange.base.totalTax,
-    high: baseline.totalTax - revisedRange.high.totalTax,
+    low: roundToCents(baseline.totalTax - revisedRange.low.totalTax),
+    base: roundToCents(baseline.totalTax - revisedRange.base.totalTax),
+    high: roundToCents(baseline.totalTax - revisedRange.high.totalTax),
   };
 
   return {
