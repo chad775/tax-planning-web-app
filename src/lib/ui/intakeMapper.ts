@@ -23,10 +23,11 @@ export function mapUiToNormalizedIntake(ui: UiIntakeFormState): IntakeMapperOk |
     },
     business: {
       has_business: !!ui.hasBusiness,
-      entity_type: ui.hasBusiness
-       ? normalizeEntityType(ui.businessEntityType)
-       : "UNKNOWN",
-
+      // IMPORTANT:
+      // - Your strategy rules expect lowercase canonical values like "s_corp"
+      // - Your UI uses uppercase enum values like "S_CORP"
+      // So we normalize here to match rules.
+      entity_type: ui.hasBusiness ? normalizeEntityType(ui.businessEntityType) : "unknown",
       employees_count: ui.hasBusiness ? toInt(ui.employeesCount) : 0,
       net_profit: ui.hasBusiness ? toMoney(ui.businessNetProfit) : 0,
     },
@@ -57,34 +58,45 @@ export function mapUiToNormalizedIntake(ui: UiIntakeFormState): IntakeMapperOk |
 /* ---------------- helpers ---------------- */
 
 function normalizeEntityType(
-  v: unknown
-): "SOLE_PROP" | "S_CORP" | "C_CORP" | "PARTNERSHIP" | "LLC" | "UNKNOWN" {
-  if (typeof v !== "string") return "UNKNOWN";
+  v: unknown,
+): "sole_prop" | "s_corp" | "c_corp" | "partnership" | "llc" | "unknown" {
+  if (typeof v !== "string") return "unknown";
 
-  const s = v.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  // Normalize to lowercase snake_case so it matches strategy-rules.json values
+  const s = v.trim().toLowerCase().replace(/[\s-]+/g, "_");
 
   switch (s) {
-    case "SOLE_PROP":
-    case "SOLE_PROPRIETOR":
-    case "SOLE_PROPRIETORSHIP":
-      return "SOLE_PROP";
+    case "sole_prop":
+    case "soleproprietor":
+    case "sole_proprietor":
+    case "soleproprietorship":
+    case "sole_proprietorship":
+      return "sole_prop";
 
-    case "PARTNERSHIP":
-      return "PARTNERSHIP";
+    case "partnership":
+    case "partner":
+      return "partnership";
 
-    case "S_CORP":
-    case "S_CORPORATION":
-      return "S_CORP";
+    case "s_corp":
+    case "scorp":
+    case "s_corporation":
+    case "s-corp":
+      return "s_corp";
 
-    case "C_CORP":
-    case "C_CORPORATION":
-      return "C_CORP";
+    case "c_corp":
+    case "ccorp":
+    case "c_corporation":
+    case "c-corp":
+      return "c_corp";
 
-    case "LLC":
-      return "LLC";
+    case "llc":
+      return "llc";
+
+    case "unknown":
+      return "unknown";
 
     default:
-      return "UNKNOWN";
+      return "unknown";
   }
 }
 
