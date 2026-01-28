@@ -160,10 +160,14 @@ export default function IntakePage() {
         throw new Error(text || `Submit failed (${res.status})`);
       }
 
-      const json: AnalyzeApiResponse = await res.json();
+      const json: any = await res.json();
 
-      sessionStorage.setItem("latestAnalysis", JSON.stringify(json));
-      router.push("/results");
+// /api/submit returns a wrapper; results page expects the analysis itself
+const analysis = json?.analysis ?? json;
+
+sessionStorage.setItem("latestAnalysis", JSON.stringify(analysis));
+router.push("/results");
+
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Submit failed.");
     } finally {

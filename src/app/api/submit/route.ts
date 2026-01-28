@@ -9,6 +9,24 @@ function mustEnv(name: string): string {
   return v;
 }
 
+function getBaseUrl(req: Request): string {
+  // Works on localhost + Vercel/Proxies
+  const host = req.headers.get("host");
+  const proto = req.headers.get("x-forwarded-proto") ?? "http";
+  if (host) return `${proto}://${host}`;
+
+  // Fallback: origin header or APP_ORIGIN
+  return req.headers.get("origin") ?? mustEnv("APP_ORIGIN");
+}
+
+async function safeReadText(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as any;
@@ -28,17 +46,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing intake object" }, { status: 400 });
     }
 
-    const origin = req.headers.get("origin") ?? mustEnv("APP_ORIGIN");
+    const baseUrl = getBaseUrl(req);
 
-    // 1) Analyze (server-to-server) — IMPORTANT: analyze expects { intake: ... }
-    const analyzeRes = await fetch(`${origin}/api/analyze`, {
+    // 1) Analyze (server-to-server)
+    const analyzeRes = await fetch(`${baseUrl}/api/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ intake }),
     });
 
     if (!analyzeRes.ok) {
-      const text = await analyzeRes.text().catch(() => "");
+      const text = await safeReadText(analyzeRes);
       return NextResponse.json(
         { ok: false, error: text || `Analyze failed (${analyzeRes.status})` },
         { status: 500 },
@@ -47,33 +65,61 @@ export async function POST(req: Request) {
 
     const analysisJson = await analyzeRes.json();
 
-    // 2) Call GHL ingest (server-to-server; secret stays private)
-    const ingestPayload: any = {
-      email,
-      analysis: analysisJson,
-      ...(firstName ? { firstName } : {}),
-      ...(phone ? { phone } : {}),
-    };
+    // 2) Best-effort: Call GHL ingest
+    // IMPORTANT: This should never prevent returning results.
+    let emailStatus: { ok: true } | { ok: false; error: string } = { ok: true };
 
-    const ingestRes = await fetch(`${origin}/api/ghl/ingest`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": mustEnv("GHL_WEBHOOK_SECRET"),
-      },
-      body: JSON.stringify(ingestPayload),
-    });
+    try {
+      const ingestPayload: any = {
+        email,
+        analysis: analysisJson,
+        ...(firstName ? { firstName } : {}),
+        ...(phone ? { phone } : {}),
+      };
 
-    if (!ingestRes.ok) {
-      const text = await ingestRes.text().catch(() => "");
-      return NextResponse.json(
-        { ok: false, error: text || `GHL ingest failed (${ingestRes.status})` },
-        { status: 500 },
-      );
+      const ingestRes = await fetch(`${baseUrl}/api/ghl/ingest`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": mustEnv("GHL_WEBHOOK_SECRET"),
+        },
+        body: JSON.stringify(ingestPayload),
+      });
+
+      if (!ingestRes.ok) {
+        const text = await safeReadText(ingestRes);
+        emailStatus = {
+          ok: false,
+          error: text || `EMAIL_SEND_FAILED (${ingestRes.status})`,
+        };
+      } else {
+        // In case the ingest route returns {ok:false,...} with 200
+        try {
+          const maybe = await ingestRes.json();
+          if (maybe && typeof maybe === "object" && (maybe as any).ok === false) {
+            emailStatus = {
+              ok: false,
+              error: typeof (maybe as any).error === "string" ? (maybe as any).error : "EMAIL_SEND_FAILED",
+            };
+          }
+        } catch {
+          // ignore JSON parse; still ok
+        }
+      }
+    } catch (e: any) {
+      emailStatus = { ok: false, error: e?.message ?? "EMAIL_SEND_FAILED" };
     }
 
-    // Return analysis so /results page continues to work
-    return NextResponse.json(analysisJson);
+    // 3) Always return analysis for /results
+    // Wrap it so the client can still access the exact analysis JSON.
+    return NextResponse.json(
+      {
+        ok: true,
+        analysis: analysisJson,
+        email: emailStatus, // {ok:true} or {ok:false,error:"..."}
+      },
+      { status: 200 },
+    );
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "Submit failed" },
