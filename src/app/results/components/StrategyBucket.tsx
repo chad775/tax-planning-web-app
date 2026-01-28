@@ -34,11 +34,13 @@ type StrategyBucketProps = {
 
 export function StrategyBucket({ strategies, tier, title, description }: StrategyBucketProps) {
   const formatMoney = (amount: number): string => {
-    return `$${Math.abs(amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    const sign = amount < 0 ? "-" : "";
+    const absAmount = Math.abs(amount);
+    return `${sign}$${absAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   };
 
   const formatRange = (range: { low: number; base: number; high: number } | null): string => {
-    if (!range) return "—";
+    if (range === null) return "—";
     if (range.low === range.base && range.base === range.high) {
       return formatMoney(range.base);
     }
@@ -107,8 +109,11 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
       {description && <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>{description}</p>}
       <div style={{ display: "grid", gap: 12 }}>
         {strategies.map((strategy) => {
-          const catalogEntry = STRATEGY_CATALOG[strategy.strategyId as StrategyId];
-          const strategyName = catalogEntry?.uiLabel || strategy.strategyId;
+          const catalogEntry =
+            strategy.strategyId in STRATEGY_CATALOG
+              ? STRATEGY_CATALOG[strategy.strategyId as StrategyId]
+              : undefined;
+          const strategyName = catalogEntry?.uiLabel ?? strategy.strategyId;
 
           return (
             <div key={strategy.strategyId} style={cardStyle}>
@@ -162,21 +167,21 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
                 </div>
               </div>
 
-              {strategy.taxableIncomeDelta && (
+              {strategy.taxableIncomeDelta !== null && (
                 <div>
                   <div style={labelStyle}>Taxable Income Delta</div>
                   <div style={valueStyle}>{formatRange(strategy.taxableIncomeDelta)}</div>
                 </div>
               )}
 
-              {strategy.taxLiabilityDelta && (
+              {strategy.taxLiabilityDelta !== null && (
                 <div>
                   <div style={labelStyle}>Tax Liability Delta</div>
                   <div style={valueStyle}>{formatRange(strategy.taxLiabilityDelta)}</div>
                 </div>
               )}
 
-              {strategy.model && (
+              {strategy.model !== null && strategy.model !== undefined && (
                 <div>
                   <div style={labelStyle}>Model</div>
                   <div style={valueStyle}>{strategy.model}</div>

@@ -26,18 +26,22 @@ export function WhatIfScenario({
   taxableIncomeDeltaBase,
   baselineBreakdown,
 }: WhatIfScenarioProps) {
-  const catalogEntry = STRATEGY_CATALOG[strategyId as StrategyId];
-  const strategyName = catalogEntry?.uiLabel || strategyId;
+  const catalogEntry =
+    strategyId in STRATEGY_CATALOG ? STRATEGY_CATALOG[strategyId as StrategyId] : undefined;
+  const strategyName = catalogEntry?.uiLabel ?? strategyId;
 
   const formatMoney = (amount: number): string => {
-    return `$${Math.abs(amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    const sign = amount < 0 ? "-" : "";
+    const absAmount = Math.abs(amount);
+    return `${sign}$${absAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   };
 
   const formatDelta = (baselineVal: number, revisedVal: number): string => {
     const delta = revisedVal - baselineVal;
     if (delta === 0) return "—";
     const sign = delta < 0 ? "-" : "+";
-    return `${sign}${formatMoney(Math.abs(delta))}`;
+    const absDelta = Math.abs(delta);
+    return `${sign}$${absDelta.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   };
 
   const cardStyle: React.CSSProperties = {
@@ -102,6 +106,7 @@ export function WhatIfScenario({
           <tr style={rowStyle}>
             <td style={labelStyle}>Taxable Income Delta</td>
             <td style={valueStyle}>{formatMoney(taxableIncomeDeltaBase)}</td>
+            <td style={deltaStyle}></td>
           </tr>
           <tr style={rowStyle}>
             <td style={labelStyle}>Taxable Income</td>

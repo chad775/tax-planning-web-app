@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { TaxBreakdownTable, type TaxBreakdown } from "./components/TaxBreakdownTable";
 import { StrategyBucket } from "./components/StrategyBucket";
 import { WhatIfScenario } from "./components/WhatIfScenario";
+import { STRATEGY_CATALOG } from "@/lib/strategies/strategyCatalog";
+import type { StrategyId } from "@/contracts/strategyIds";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -142,7 +144,11 @@ export default function ResultsPage() {
       {vm.baselineBreakdown && vm.revisedBreakdown && (
         <section style={cardStyle}>
           <h2 style={h2Style}>Tax Breakdown: Baseline vs After Strategies</h2>
-          <TaxBreakdownTable baseline={vm.baselineBreakdown} revised={vm.revisedBreakdown} />
+          <TaxBreakdownTable
+            baseline={vm.baselineBreakdown}
+            revised={vm.revisedBreakdown}
+            appliedStrategies={buildAppliedStrategies(vm.strategyBuckets)}
+          />
         </section>
       )}
 
@@ -299,6 +305,41 @@ function asNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Applied strategies builder                                         */
+/* ------------------------------------------------------------------ */
+
+function buildAppliedStrategies(buckets: StrategyBuckets | null): Array<{
+  strategyId: string;
+  label: string;
+  agiDeltaBase: number;
+}> {
+  if (!buckets) return [];
+
+  const applied = buckets.applied.filter((s) => {
+    // Only tier 1 or 2
+    if (s.tier !== 1 && s.tier !== 2) return false;
+    // Must have APPLIED flag
+    if (!s.flags.includes("APPLIED")) return false;
+    // Must have taxableIncomeDelta
+    if (s.taxableIncomeDelta === null) return false;
+    return true;
+  });
+
+  return applied.map((s) => {
+    const catalogEntry =
+      s.strategyId in STRATEGY_CATALOG ? STRATEGY_CATALOG[s.strategyId as StrategyId] : undefined;
+    const label = catalogEntry?.uiLabel ?? s.strategyId;
+    const agiDeltaBase = s.taxableIncomeDelta!.base; // Already checked for null above
+
+    return {
+      strategyId: s.strategyId,
+      label,
+      agiDeltaBase,
+    };
+  });
+}
+
 function normalizeBreakdown(v: JsonRecord | null): TaxBreakdown | null {
   if (!v) return null;
 
@@ -308,11 +349,16 @@ function normalizeBreakdown(v: JsonRecord | null): TaxBreakdown | null {
   const state = asRecord(v["state"]);
   const totals = asRecord(v["totals"]);
 
+  const gross_income = asNumber(v["gross_income"]);
+  const agi = asNumber(v["agi"]);
+  const standard_deduction = asNumber(v["standard_deduction"]);
+  const taxable_income = asNumber(v["taxable_income"]);
+
   if (
-    !asNumber(v["gross_income"]) ||
-    !asNumber(v["agi"]) ||
-    !asNumber(v["standard_deduction"]) ||
-    !asNumber(v["taxable_income"]) ||
+    gross_income === null ||
+    agi === null ||
+    standard_deduction === null ||
+    taxable_income === null ||
     !federal ||
     !ctc ||
     !state ||
@@ -322,20 +368,22 @@ function normalizeBreakdown(v: JsonRecord | null): TaxBreakdown | null {
   }
 
   return {
-    gross_income: asNumber(v["gross_income"])!,
+    gross_income,
     adjustments: {
       k401_employee_contrib_ytd: asNumber(adjustments?.["k401_employee_contrib_ytd"]) ?? 0,
     },
-    agi: asNumber(v["agi"])!,
-    standard_deduction: asNumber(v["standard_deduction"])!,
-    taxable_income: asNumber(v["taxable_income"])!,
+    agi,
+    standard_deduction,
+    taxable_income,
     federal: {
       income_tax_before_credits: asNumber(federal["income_tax_before_credits"]) ?? 0,
       ctc: {
         available: asNumber(ctc["available"]) ?? 0,
         used_nonrefundable: asNumber(ctc["used_nonrefundable"]) ?? 0,
         unused: asNumber(ctc["unused"]) ?? 0,
-        ...(asString(ctc["phaseout_rules"]) ? { phaseout_rules: asString(ctc["phaseout_rules"])! } : {}),
+        ...(asString(ctc["phaseout_rules"])
+          ? { phaseout_rules: asString(ctc["phaseout_rules"])! }
+          : {}),
       },
       tax_after_credits: asNumber(federal["tax_after_credits"]) ?? 0,
     },
