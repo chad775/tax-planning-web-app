@@ -210,7 +210,7 @@ export default function ResultsPage() {
                         breakdown={whatIf.breakdown}
                         taxableIncomeDeltaBase={whatIf.taxableIncomeDeltaBase}
                         baselineBreakdown={vm.baselineBreakdown!}
-                        assumptions={assumptions}
+                        {...(assumptions ? { assumptions } : {})}
                       />
                     );
                   })}
