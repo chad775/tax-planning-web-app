@@ -157,30 +157,30 @@ export default function ResultsPage() {
         <section style={cardStyle}>
           <h2 style={h2Style}>Strategies</h2>
 
-          {/* Tier 1: Applied Automatically */}
+          {/* Tier 1: Quick wins */}
           <StrategyBucket
             strategies={vm.strategyBuckets.applied.filter((s) => s.tier === 1)}
             tier={1}
-            title="Tier 1: Applied Automatically"
+            title="Quick wins (usually easiest)"
             description="These strategies are applied automatically when eligible. They stack together to reduce your taxable income."
           />
 
-          {/* Tier 2: Applied Conditionally */}
+          {/* Tier 2: Next best options */}
           <div style={{ marginTop: 24 }}>
             <StrategyBucket
               strategies={vm.strategyBuckets.applied.filter((s) => s.tier === 2)}
               tier={2}
-              title="Tier 2: Applied Conditionally"
+              title="Next best options"
               description="These strategies are applied when eligible and income thresholds are met. They stack with Tier 1 strategies."
             />
           </div>
 
-          {/* Tier 3: Opportunities */}
+          {/* Tier 3: Bigger opportunities */}
           <div style={{ marginTop: 24 }}>
             <StrategyBucket
               strategies={vm.strategyBuckets.opportunities}
               tier={3}
-              title="Tier 3: Opportunities to Consider"
+              title="Bigger opportunities to explore"
               description="These are shown as 'what-if' opportunities. Each strategy is calculated independently (not combined with other Tier 3 strategies)."
             />
           </div>

@@ -65,14 +65,6 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
     return `${sign}$${absAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   };
 
-  const formatDelta = (baselineVal: number, revisedVal: number): string => {
-    const delta = revisedVal - baselineVal;
-    if (delta === 0) return "—";
-    const sign = delta < 0 ? "-" : "+";
-    const absDelta = Math.abs(delta);
-    return `${sign}$${absDelta.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  };
-
   const rowStyle: React.CSSProperties = {
     borderTop: "1px solid #e5e5e5",
     padding: "10px 0",
@@ -88,13 +80,6 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
     fontWeight: 700,
     color: "#111",
     fontSize: 14,
-    textAlign: "right" as const,
-  };
-
-  const deltaStyle: React.CSSProperties = {
-    fontWeight: 600,
-    color: "#666",
-    fontSize: 13,
     textAlign: "right" as const,
   };
 
@@ -117,7 +102,7 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: "16px", alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", alignItems: "start" }}>
         {/* Baseline Column */}
         <div>
           <div style={sectionHeaderStyle}>Baseline</div>
@@ -165,26 +150,6 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
           <div style={{ ...rowStyle, borderTop: "2px solid #111", paddingTop: 12, marginTop: 8 }}>
             <div style={{ ...labelStyle, fontWeight: 900 }}>Total Tax</div>
             <div style={{ ...valueStyle, fontWeight: 900 }}>{formatMoney(baseline.totals.totalTax)}</div>
-          </div>
-        </div>
-
-        {/* Delta Column */}
-        <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingBottom: 10 }}>
-          <div style={{ ...sectionHeaderStyle, visibility: "hidden" }}>Delta</div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, height: 24 }}></div>
-          <div style={{ ...rowStyle, borderTop: "2px solid #111", paddingTop: 12, marginTop: 8 }}>
-            <div style={deltaStyle}>
-              {formatDelta(baseline.totals.totalTax, revised.totals.totalTax)}
-            </div>
           </div>
         </div>
 

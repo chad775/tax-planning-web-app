@@ -2,11 +2,11 @@
 /**
  * Component for displaying strategies in a bucket (Tier 1, Tier 2, or Tier 3).
  * 
- * Shows strategy details including:
- * - Strategy name and tier
- * - Eligibility status
- * - Impact deltas (taxable income and tax liability)
- * - Flags and assumptions
+ * Prospect-friendly version showing:
+ * - Strategy name and plain English summary
+ * - Friendly status labels
+ * - Estimated income reduction in readable format
+ * - Simple flag explanations
  */
 
 import React from "react";
@@ -39,12 +39,23 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
     return `${sign}$${absAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   };
 
-  const formatRange = (range: { low: number; base: number; high: number } | null): string => {
+  const formatIncomeReduction = (range: { low: number; base: number; high: number } | null): string => {
     if (range === null) return "—";
-    if (range.low === range.base && range.base === range.high) {
-      return formatMoney(range.base);
+    const base = Math.abs(range.base);
+    const low = Math.abs(range.low);
+    const high = Math.abs(range.high);
+    
+    if (low === base && base === high) {
+      return `About ${formatMoney(-base)}`;
     }
-    return `${formatMoney(range.low)} - ${formatMoney(range.high)} (base: ${formatMoney(range.base)})`;
+    return `About ${formatMoney(-base)} (range ${formatMoney(-low)} to ${formatMoney(-high)})`;
+  };
+
+  const getFriendlyStatus = (status: string | null): string => {
+    if (status === "ELIGIBLE") return "Eligible";
+    if (status === "NOT_ELIGIBLE") return "Not eligible";
+    if (status === "POTENTIAL") return "Could be eligible";
+    return "Needs review";
   };
 
   const getStatusColor = (status: string | null): string => {
@@ -54,10 +65,19 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
     return "#666";
   };
 
+  const getFriendlyFlagLabel = (flag: string): string | null => {
+    if (flag === "ALREADY_IN_USE") return "Already using this";
+    if (flag === "NOT_APPLIED_POTENTIAL" && tier === 3) return "Optional";
+    if (flag === "CAPPED_BY_TAXABLE_INCOME") return "Limited by your income";
+    if (flag === "CAPPED_BY_TAX_LIABILITY") return "Limited by tax owed";
+    // Hide other flags from prospect view
+    return null;
+  };
+
   const cardStyle: React.CSSProperties = {
     border: "1px solid #e5e5e5",
     borderRadius: 12,
-    padding: 14,
+    padding: 16,
     background: "#fff",
     marginBottom: 12,
   };
@@ -68,10 +88,17 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
     marginBottom: 8,
   };
 
+  const summaryStyle: React.CSSProperties = {
+    fontSize: 14,
+    color: "#555",
+    lineHeight: 1.5,
+    marginBottom: 12,
+  };
+
   const tagStyle: React.CSSProperties = {
     fontSize: 11,
     fontWeight: 700,
-    padding: "3px 8px",
+    padding: "4px 10px",
     borderRadius: 999,
     display: "inline-flex",
     alignItems: "center",
@@ -80,17 +107,18 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 700,
-    color: "#666",
-    marginTop: 10,
-    marginBottom: 4,
+    color: "#333",
+    marginTop: 12,
+    marginBottom: 6,
   };
 
   const valueStyle: React.CSSProperties = {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 600,
     color: "#111",
+    lineHeight: 1.5,
   };
 
   if (strategies.length === 0) {
@@ -114,6 +142,17 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
               ? STRATEGY_CATALOG[strategy.strategyId as StrategyId]
               : undefined;
           const strategyName = catalogEntry?.uiLabel ?? strategy.strategyId;
+          const strategySummary = catalogEntry?.uiSummary ?? "This is a potential strategy that may reduce taxable income depending on your situation.";
+
+          const friendlyStatus = getFriendlyStatus(strategy.status);
+          const statusColor = getStatusColor(strategy.status);
+
+          // Collect friendly flags (only show relevant ones)
+          const friendlyFlags: string[] = [];
+          for (const flag of strategy.flags) {
+            const friendly = getFriendlyFlagLabel(flag);
+            if (friendly) friendlyFlags.push(friendly);
+          }
 
           return (
             <div key={strategy.strategyId} style={cardStyle}>
@@ -123,22 +162,12 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
                   <span
                     style={{
                       ...tagStyle,
-                      border: `1px solid ${getStatusColor(strategy.status)}`,
-                      background: getStatusColor(strategy.status) === "#117a2a" ? "#f0fff4" : "#fff",
-                      color: getStatusColor(strategy.status),
+                      border: `1px solid ${statusColor}`,
+                      background: statusColor === "#117a2a" ? "#f0fff4" : "#fff",
+                      color: statusColor,
                     }}
                   >
-                    {strategy.status || "UNKNOWN"}
-                  </span>
-                  <span
-                    style={{
-                      ...tagStyle,
-                      border: "1px solid #ccc",
-                      background: "#fafafa",
-                      color: "#333",
-                    }}
-                  >
-                    Tier {tier}
+                    {friendlyStatus}
                   </span>
                   {strategy.needsConfirmation && (
                     <span
@@ -149,11 +178,12 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
                         color: "#946200",
                       }}
                     >
-                      Needs Confirmation
+                      Needs more info
                     </span>
                   )}
-                  {strategy.flags.includes("ALREADY_IN_USE") && (
+                  {friendlyFlags.map((flag) => (
                     <span
+                      key={flag}
                       style={{
                         ...tagStyle,
                         border: "1px solid #666",
@@ -161,60 +191,20 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
                         color: "#333",
                       }}
                     >
-                      Already in Use
+                      {flag}
                     </span>
-                  )}
+                  ))}
                 </div>
               </div>
 
+              {/* What this is summary */}
+              <div style={summaryStyle}>{strategySummary}</div>
+
+              {/* Estimated income reduction */}
               {strategy.taxableIncomeDelta !== null && (
                 <div>
-                  <div style={labelStyle}>Taxable Income Delta</div>
-                  <div style={valueStyle}>{formatRange(strategy.taxableIncomeDelta)}</div>
-                </div>
-              )}
-
-              {strategy.taxLiabilityDelta !== null && (
-                <div>
-                  <div style={labelStyle}>Tax Liability Delta</div>
-                  <div style={valueStyle}>{formatRange(strategy.taxLiabilityDelta)}</div>
-                </div>
-              )}
-
-              {strategy.model !== null && strategy.model !== undefined && (
-                <div>
-                  <div style={labelStyle}>Model</div>
-                  <div style={valueStyle}>{strategy.model}</div>
-                </div>
-              )}
-
-              {strategy.assumptions.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={labelStyle}>Assumptions</div>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    {strategy.assumptions.map((assumption) => (
-                      <div
-                        key={assumption.id}
-                        style={{
-                          fontSize: 11,
-                          padding: 6,
-                          background: "#fafafa",
-                          borderRadius: 6,
-                          border: "1px solid #eee",
-                        }}
-                      >
-                        <div style={{ fontWeight: 700 }}>{assumption.id}</div>
-                        <div style={{ color: "#666", fontSize: 10 }}>{assumption.category}</div>
-                        {assumption.value !== undefined && (
-                          <div style={{ color: "#111", fontSize: 10 }}>
-                            {typeof assumption.value === "number"
-                              ? formatMoney(assumption.value)
-                              : String(assumption.value)}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <div style={labelStyle}>Estimated income reduction</div>
+                  <div style={valueStyle}>{formatIncomeReduction(strategy.taxableIncomeDelta)}</div>
                 </div>
               )}
             </div>
