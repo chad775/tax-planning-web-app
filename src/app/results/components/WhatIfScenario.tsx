@@ -18,33 +18,96 @@ type WhatIfScenarioProps = {
   breakdown: TaxBreakdown;
   taxableIncomeDeltaBase: number;
   baselineBreakdown: TaxBreakdown;
+  assumptions?: Array<{ id: string; category: string; value: unknown }>;
 };
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function formatMoney(amount: number): string {
+  const sign = amount < 0 ? "-" : "";
+  const absAmount = Math.abs(amount);
+  return `${sign}$${absAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function formatMoneyOrDash(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (value === 0) return "$0";
+  return formatMoney(value);
+}
+
+function safeNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  return null;
+}
+
+function getAssumptionNumber(
+  assumptions: Array<{ id: string; category: string; value: unknown }> | undefined,
+  id: string,
+): number | null {
+  if (!assumptions) return null;
+  const assumption = assumptions.find((a) => a.id === id);
+  if (!assumption) return null;
+  return safeNumber(assumption.value);
+}
+
+function deriveEstimatedCost(
+  strategyId: string,
+  assumptions: Array<{ id: string; category: string; value: unknown }> | undefined,
+): number | null {
+  if (!assumptions) return null;
+  switch (strategyId) {
+    case "rtu_program":
+      return getAssumptionNumber(assumptions, "RTU_INVESTMENT");
+    case "film_credits":
+      return getAssumptionNumber(assumptions, "FILM_INVESTMENT_MIN");
+    case "leveraged_charitable":
+      return getAssumptionNumber(assumptions, "LEVERAGED_CHARITABLE_INVESTMENT_MIN");
+    case "short_term_rental":
+      // Cost is NOT just purchase price; treat purchase price as "capital required"
+      return null;
+    default:
+      return null;
+  }
+}
+
+function deriveCapitalRequired(
+  strategyId: string,
+  assumptions: Array<{ id: string; category: string; value: unknown }> | undefined,
+): number | null {
+  if (!assumptions) return null;
+  if (strategyId === "short_term_rental") {
+    return getAssumptionNumber(assumptions, "STR_PURCHASE_PRICE");
+  }
+  return null;
+}
+
+function deriveRecommendedIncomeMin(
+  assumptions: Array<{ id: string; category: string; value: unknown }> | undefined,
+): number | null {
+  if (!assumptions) return null;
+  return getAssumptionNumber(assumptions, "RECOMMENDED_INCOME_MIN");
+}
 
 export function WhatIfScenario({
   strategyId,
   breakdown,
   taxableIncomeDeltaBase,
   baselineBreakdown,
+  assumptions,
 }: WhatIfScenarioProps) {
   const [showDetails, setShowDetails] = useState(false);
 
   const catalogEntry =
     strategyId in STRATEGY_CATALOG ? STRATEGY_CATALOG[strategyId as StrategyId] : undefined;
   const strategyName = catalogEntry?.uiLabel ?? strategyId;
-  const strategySummary = catalogEntry?.uiSummary ?? "This is a potential strategy that may reduce taxable income depending on your situation.";
-  const estimatedCost = catalogEntry?.estimatedCost ?? null;
-  const recommendedIncomeMin = catalogEntry?.recommendedIncomeMin ?? null;
+  const strategySummary = catalogEntry?.uiSummary;
 
-  const formatMoney = (amount: number): string => {
-    const sign = amount < 0 ? "-" : "";
-    const absAmount = Math.abs(amount);
-    return `${sign}$${absAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  };
-
-  const formatMoneyOrDash = (value: number | null | undefined): string => {
-    if (value === null || value === undefined) return "—";
-    return formatMoney(value);
-  };
+  // Derive cost and capital required from assumptions
+  const estimatedCost = deriveEstimatedCost(strategyId, assumptions);
+  const capitalRequired = deriveCapitalRequired(strategyId, assumptions);
+  const recommendedIncomeMin = deriveRecommendedIncomeMin(assumptions);
 
   // Calculate key metrics
   const deductionAmount = Math.abs(taxableIncomeDeltaBase);
@@ -52,7 +115,7 @@ export function WhatIfScenario({
   const netSavings = estimatedCost !== null ? taxSavings - estimatedCost : null;
 
   // Check if user income is below recommended minimum
-  const userIncome = baselineBreakdown.gross_income; // Use gross income as proxy
+  const userIncome = baselineBreakdown.gross_income;
   const incomeWarning = recommendedIncomeMin !== null && userIncome < recommendedIncomeMin;
 
   const cardStyle: React.CSSProperties = {
@@ -170,7 +233,7 @@ export function WhatIfScenario({
   return (
     <div style={cardStyle}>
       <div style={headerStyle}>What if you did: {strategyName}</div>
-      <div style={summaryStyle}>{strategySummary}</div>
+      {strategySummary && <div style={summaryStyle}>{strategySummary}</div>}
 
       {/* Income warning */}
       {incomeWarning && (
@@ -209,6 +272,12 @@ export function WhatIfScenario({
           <div style={numberLabelStyle}>Estimated cost</div>
           <div style={numberValueStyle}>{formatMoneyOrDash(estimatedCost)}</div>
         </div>
+        {capitalRequired !== null && (
+          <div style={numberItemStyle}>
+            <div style={numberLabelStyle}>Capital required</div>
+            <div style={numberValueStyle}>{formatMoneyOrDash(capitalRequired)}</div>
+          </div>
+        )}
         {netSavings !== null && (
           <div style={numberItemStyle}>
             <div style={numberLabelStyle}>Estimated net savings</div>

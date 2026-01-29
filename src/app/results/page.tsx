@@ -193,15 +193,24 @@ export default function ResultsPage() {
                 Below shows the tax breakdown if each Tier 3 strategy were applied individually on top of Tier 1-2
                 strategies.
               </p>
-              {vm.strategyBuckets.opportunity_what_if.map((whatIf) => (
-                <WhatIfScenario
-                  key={whatIf.strategyId}
-                  strategyId={whatIf.strategyId}
-                  breakdown={whatIf.breakdown}
-                  taxableIncomeDeltaBase={whatIf.taxableIncomeDeltaBase}
-                  baselineBreakdown={vm.baselineBreakdown!}
-                />
-              ))}
+              {vm.strategyBuckets.opportunity_what_if.map((whatIf) => {
+                // Try to find assumptions from the matching opportunity strategy
+                const matchingStrategy = vm.strategyBuckets.opportunities.find(
+                  (s) => s.strategyId === whatIf.strategyId,
+                );
+                const assumptions = matchingStrategy?.assumptions;
+
+                return (
+                  <WhatIfScenario
+                    key={whatIf.strategyId}
+                    strategyId={whatIf.strategyId}
+                    breakdown={whatIf.breakdown}
+                    taxableIncomeDeltaBase={whatIf.taxableIncomeDeltaBase}
+                    baselineBreakdown={vm.baselineBreakdown!}
+                    assumptions={assumptions}
+                  />
+                );
+              })}
             </div>
           )}
         </section>
