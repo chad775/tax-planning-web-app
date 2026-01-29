@@ -13,9 +13,13 @@ export type StrategyMeta = {
   uiLabel: string;
   uiSummary: string; // Plain English 1-2 sentence summary for prospects
   displayOrder: number;
+  // Tier 3 metadata (optional, null if unknown)
+  estimatedCost?: number | null; // Out-of-pocket cost estimate for prospect
+  recommendedIncomeMin?: number | null; // Recommended income floor
 };
 
 // TODO: Review and refine uiSummary text for all strategies below
+// TODO: Add estimatedCost and recommendedIncomeMin for Tier 3 strategies as data becomes available
 export const STRATEGY_CATALOG: Record<StrategyId, StrategyMeta> = {
   augusta_loophole: {
     id: "augusta_loophole",
@@ -74,6 +78,8 @@ export const STRATEGY_CATALOG: Record<StrategyId, StrategyMeta> = {
     combineMode: "solo",
     uiLabel: "Short-Term Rental + Cost Segregation",
     uiSummary: "Use cost segregation on rental property to accelerate depreciation deductions, reducing taxable income in early years.",
+    estimatedCost: null, // TODO: Add cost estimate when available
+    recommendedIncomeMin: null, // TODO: Add recommended income minimum when available
     displayOrder: 80,
   },
   leveraged_charitable: {
@@ -84,6 +90,8 @@ export const STRATEGY_CATALOG: Record<StrategyId, StrategyMeta> = {
     minBaselineTaxableIncome: 833_000,
     uiLabel: "Leveraged Charitable",
     uiSummary: "Use charitable giving strategies that provide tax benefits while supporting causes you care about.",
+    estimatedCost: null, // TODO: Add cost estimate when available
+    recommendedIncomeMin: 833_000, // Uses minBaselineTaxableIncome as proxy
     displayOrder: 90,
   },
   rtu_program: {
@@ -94,6 +102,8 @@ export const STRATEGY_CATALOG: Record<StrategyId, StrategyMeta> = {
     minBaselineTaxableIncome: 350_000,
     uiLabel: "RTU Program",
     uiSummary: "Qualify as a real estate professional to unlock additional tax benefits from rental property activities.",
+    estimatedCost: null, // TODO: Add cost estimate when available
+    recommendedIncomeMin: 350_000, // Uses minBaselineTaxableIncome as proxy
     displayOrder: 95,
   },
   film_credits: {
@@ -104,6 +114,8 @@ export const STRATEGY_CATALOG: Record<StrategyId, StrategyMeta> = {
     minBaselineTaxableIncome: 500_000,
     uiLabel: "Film Credits",
     uiSummary: "Invest in film production to access state tax credits that can reduce your overall tax liability.",
+    estimatedCost: null, // TODO: Add cost estimate when available
+    recommendedIncomeMin: 500_000, // Uses minBaselineTaxableIncome as proxy
     displayOrder: 100,
   },
 };
