@@ -153,68 +153,72 @@ export default function ResultsPage() {
       )}
 
       {/* Strategy Buckets */}
-      {vm.strategyBuckets && (
-        <section style={cardStyle}>
-          <h2 style={h2Style}>Strategies</h2>
+      {vm.strategyBuckets &&
+        (() => {
+          const buckets = vm.strategyBuckets;
+          return (
+            <section style={cardStyle}>
+              <h2 style={h2Style}>Strategies</h2>
 
-          {/* Tier 1: Quick wins */}
-          <StrategyBucket
-            strategies={vm.strategyBuckets.applied.filter((s) => s.tier === 1)}
-            tier={1}
-            title="Quick wins (usually easiest)"
-            description="These strategies are applied automatically when eligible. They stack together to reduce your taxable income."
-          />
+              {/* Tier 1: Quick wins */}
+              <StrategyBucket
+                strategies={buckets.applied.filter((s) => s.tier === 1)}
+                tier={1}
+                title="Quick wins (usually easiest)"
+                description="These strategies are applied automatically when eligible. They stack together to reduce your taxable income."
+              />
 
-          {/* Tier 2: Next best options */}
-          <div style={{ marginTop: 24 }}>
-            <StrategyBucket
-              strategies={vm.strategyBuckets.applied.filter((s) => s.tier === 2)}
-              tier={2}
-              title="Next best options"
-              description="These strategies are applied when eligible and income thresholds are met. They stack with Tier 1 strategies."
-            />
-          </div>
+              {/* Tier 2: Next best options */}
+              <div style={{ marginTop: 24 }}>
+                <StrategyBucket
+                  strategies={buckets.applied.filter((s) => s.tier === 2)}
+                  tier={2}
+                  title="Next best options"
+                  description="These strategies are applied when eligible and income thresholds are met. They stack with Tier 1 strategies."
+                />
+              </div>
 
-          {/* Tier 3: Bigger opportunities */}
-          <div style={{ marginTop: 24 }}>
-            <StrategyBucket
-              strategies={vm.strategyBuckets.opportunities}
-              tier={3}
-              title="Bigger opportunities to explore"
-              description="These are shown as 'what-if' opportunities. Each strategy is calculated independently (not combined with other Tier 3 strategies)."
-            />
-          </div>
+              {/* Tier 3: Bigger opportunities */}
+              <div style={{ marginTop: 24 }}>
+                <StrategyBucket
+                  strategies={buckets.opportunities}
+                  tier={3}
+                  title="Bigger opportunities to explore"
+                  description="These are shown as 'what-if' opportunities. Each strategy is calculated independently (not combined with other Tier 3 strategies)."
+                />
+              </div>
 
-          {/* Tier 3 What-If Scenarios */}
-          {vm.strategyBuckets.opportunity_what_if.length > 0 && (
-            <div style={{ marginTop: 24 }}>
-              <h3 style={{ ...h3Style, marginBottom: 12 }}>What-If Scenarios (Tier 3)</h3>
-              <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
-                Below shows the tax breakdown if each Tier 3 strategy were applied individually on top of Tier 1-2
-                strategies.
-              </p>
-              {vm.strategyBuckets.opportunity_what_if.map((whatIf) => {
-                // Try to find assumptions from the matching opportunity strategy
-                const matchingStrategy = vm.strategyBuckets.opportunities.find(
-                  (s) => s.strategyId === whatIf.strategyId,
-                );
-                const assumptions = matchingStrategy?.assumptions;
+              {/* Tier 3 What-If Scenarios */}
+              {buckets.opportunity_what_if.length > 0 && (
+                <div style={{ marginTop: 24 }}>
+                  <h3 style={{ ...h3Style, marginBottom: 12 }}>What-If Scenarios (Tier 3)</h3>
+                  <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
+                    Below shows the tax breakdown if each Tier 3 strategy were applied individually on top of Tier 1-2
+                    strategies.
+                  </p>
+                  {buckets.opportunity_what_if.map((whatIf) => {
+                    // Try to find assumptions from the matching opportunity strategy
+                    const matchingStrategy = buckets.opportunities.find(
+                      (s) => s.strategyId === whatIf.strategyId,
+                    );
+                    const assumptions = matchingStrategy?.assumptions;
 
-                return (
-                  <WhatIfScenario
-                    key={whatIf.strategyId}
-                    strategyId={whatIf.strategyId}
-                    breakdown={whatIf.breakdown}
-                    taxableIncomeDeltaBase={whatIf.taxableIncomeDeltaBase}
-                    baselineBreakdown={vm.baselineBreakdown!}
-                    assumptions={assumptions}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
+                    return (
+                      <WhatIfScenario
+                        key={whatIf.strategyId}
+                        strategyId={whatIf.strategyId}
+                        breakdown={whatIf.breakdown}
+                        taxableIncomeDeltaBase={whatIf.taxableIncomeDeltaBase}
+                        baselineBreakdown={vm.baselineBreakdown!}
+                        assumptions={assumptions}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })()}
 
       {/* Actions */}
       <section style={cardStyle}>

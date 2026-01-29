@@ -10,6 +10,7 @@ import type {
   NormalizedIntake2025,
   StrategyEvaluationResult,
 } from "./impactTypes";
+import type { StrategyId } from "@/contracts/strategyIds";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(`ASSERTION FAILED: ${message}`);
@@ -25,7 +26,7 @@ function buildBaseIntake(args: {
   kids?: number;
   hasBiz?: boolean;
   k401ytd?: number;
-  strategiesInUse?: string[];
+  strategiesInUse?: StrategyId[];
 }): NormalizedIntake2025 {
   return {
     personal: {
@@ -43,7 +44,7 @@ function buildBaseIntake(args: {
     retirement: {
       k401_employee_contrib_ytd: args.k401ytd ?? 0,
     },
-    strategies_in_use: args.strategiesInUse ?? [],
+    strategies_in_use: (args.strategiesInUse ?? []) as StrategyId[],
   };
 }
 
@@ -55,7 +56,7 @@ function buildEvaluations(
 
     // exactOptionalPropertyTypes: do NOT set missingFields: undefined.
     const base: StrategyEvaluationResult = {
-      strategyId,
+      strategyId: strategyId as StrategyId,
       status,
       reasons: [],
       ...(missingFields ? { missingFields: missingFields as unknown as readonly string[] } : {}),
