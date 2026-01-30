@@ -1,11 +1,11 @@
 // src/app/results/components/WhatIfScenario.tsx
 /**
- * Component for displaying Tier 3 "what-if" scenarios in a prospect-friendly format.
+ * Component for displaying Tier 2 "what-if" scenarios in a prospect-friendly format.
  * 
  * Shows what the tax breakdown would look like if ONLY this strategy
- * were applied on top of Tier 1-2 strategies.
+ * were applied on top of Tier 1 strategies.
  * 
- * Each Tier 3 strategy is shown independently (not combined with other Tier 3).
+ * Each Tier 2 strategy is shown independently (not combined with other Tier 2).
  */
 
 import React, { useState } from "react";

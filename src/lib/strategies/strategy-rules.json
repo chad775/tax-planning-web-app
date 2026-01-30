@@ -24,9 +24,9 @@
         "rule_group": "g1",
         "field": "business.entity_type",
         "op": "in",
-        "value": ["SOLE_PROP", "PARTNERSHIP", "S_CORP"],
+        "value": ["SOLE_PROP", "PARTNERSHIP", "S_CORP", "LLC"],
         "required": true,
-        "description": "Entity type must be SOLE_PROP, PARTNERSHIP, or S_CORP"
+        "description": "Entity type must be SOLE_PROP, PARTNERSHIP, S_CORP, or LLC"
       },
   
       {
@@ -66,6 +66,15 @@
         "required": true,
         "description": "Must have available net income (positive business profit)"
       },
+      {
+        "strategy_id": "hiring_children",
+        "rule_group": "g1",
+        "field": "personal.children_0_17",
+        "op": "gte",
+        "value": 1,
+        "required": true,
+        "description": "Must have at least one child under 17"
+      },
   
       {
         "strategy_id": "cash_balance_plan",
@@ -93,6 +102,15 @@
         "value": 5,
         "required": true,
         "description": "Employees count must be 5 or fewer"
+      },
+      {
+        "strategy_id": "cash_balance_plan",
+        "rule_group": "g1",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 300000,
+        "required": true,
+        "description": "Business net profit must be at least $300,000"
       },
   
       {

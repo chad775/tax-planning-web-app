@@ -110,33 +110,30 @@ function toFederalStatus(status: NormalizedIntake2025["personal"]["filing_status
 /* Strategy tiers (local, deterministic) */
 /* ------------------------------------------------------------------ */
 /**
- * These match your src/lib/strategies/impactEngine.ts IMPACT_LEVELS:
- * level 1: ["augusta_loophole","hiring_children","medical_reimbursement"]
- * level 2: ["k401","short_term_rental"]
- * level 3: ["cash_balance_plan","rtu_program","leveraged_charitable","film_credits"]
+ * Two-tier system:
+ * Tier 1: Quick Wins (auto-applied when eligible)
+ * Tier 2: Bigger Opportunities (what-if scenarios only)
  */
-type Tier = 1 | 2 | 3;
+type Tier = 1 | 2;
 
 const STRATEGY_TIER_MAP: Readonly<Record<string, Tier>> = {
-  // Tier 1
+  // Tier 1: Auto-applied when eligible
   augusta_loophole: 1,
-  hiring_children: 1,
   medical_reimbursement: 1,
+  k401: 1,
+  hiring_children: 1,
+  s_corp_conversion: 1,
 
-  // Tier 2
-  k401: 2,
+  // Tier 2: What-if only (never auto-applied)
+  cash_balance_plan: 2,
   short_term_rental: 2,
-
-  // Tier 3
-  cash_balance_plan: 3,
-  rtu_program: 3,
-  leveraged_charitable: 3,
-  film_credits: 3,
-  s_corp_conversion: 3,
+  leveraged_charitable: 2,
+  rtu_program: 2,
+  film_credits: 2,
 } as const;
 
 function getTier(strategyId: string): Tier {
-  return STRATEGY_TIER_MAP[strategyId] ?? 3;
+  return STRATEGY_TIER_MAP[strategyId] ?? 2;
 }
 
 /* ------------------------------------------------------------------ */
@@ -485,7 +482,7 @@ export async function POST(req: Request) {
       agiOverride: revisedAgiBase,
     });
 
-    /* ---------------- NEW: buckets + tier-3 what-if ---------------- */
+    /* ---------------- NEW: buckets + tier-2 what-if ---------------- */
 
     const impactsList: any[] = Array.isArray((impact as any)?.impacts) ? (impact as any).impacts : [];
 
@@ -509,36 +506,36 @@ export async function POST(req: Request) {
       }
     }
 
-    const appliedTier12 = impactsList.filter((i: any) => {
+    const appliedTier1 = impactsList.filter((i: any) => {
       const id = String(i?.strategyId ?? i?.strategy_id ?? "");
       const tier = getTier(id);
       const flags: string[] = Array.isArray(i?.flags) ? i.flags : [];
-      return (tier === 1 || tier === 2) && flags.includes("APPLIED");
+      return tier === 1 && flags.includes("APPLIED");
     });
 
-    // Filter tier3 to exclude applied strategies
-    const tier3 = impactsList.filter((i: any) => {
+    // Filter tier2 to exclude applied strategies (tier2 never auto-applies)
+    const tier2 = impactsList.filter((i: any) => {
       const id = String(i?.strategyId ?? i?.strategy_id ?? "");
-      return getTier(id) === 3 && !appliedIds.has(id);
+      return getTier(id) === 2 && !appliedIds.has(id);
     });
 
-    const sumAppliedTier12BaseDelta = appliedTier12.reduce((acc: number, i: any) => {
-      const base = i?.taxableIncomeDelta?.base;
+    const sumAppliedTier1BaseDelta = appliedTier1.reduce((acc: number, i: any) => {
+      const base = i?.taxableIncomeDelta?.base ?? i?.taxLiabilityDelta?.base;
       return acc + (typeof base === "number" ? base : 0);
     }, 0);
 
-    // Build opportunity_what_if only for non-applied tier 3 strategies
-    const opportunity_what_if = tier3
+    // Build opportunity_what_if only for tier 2 strategies (what-if only)
+    const opportunity_what_if = tier2
       .filter((i: any) => {
         const id = String(i?.strategyId ?? i?.strategy_id ?? "");
         return !appliedIds.has(id);
       })
       .map((i: any) => {
         const id = String(i?.strategyId ?? i?.strategy_id ?? "");
-        const base = i?.taxableIncomeDelta?.base;
-        const tier3Delta = typeof base === "number" ? base : 0;
+        const base = i?.taxableIncomeDelta?.base ?? i?.taxLiabilityDelta?.base;
+        const tier2Delta = typeof base === "number" ? base : 0;
 
-        const whatIfAgi = clampMin0(baselineAgiOverride + sumAppliedTier12BaseDelta + tier3Delta);
+        const whatIfAgi = clampMin0(baselineAgiOverride + sumAppliedTier1BaseDelta + tier2Delta);
 
         const what_if_breakdown = computeTaxBreakdown({
           filingStatus: intake.personal.filing_status,
@@ -552,8 +549,8 @@ export async function POST(req: Request) {
 
         return {
           strategyId: id,
-          tier: 3 as const,
-          taxableIncomeDeltaBase: tier3Delta,
+          tier: 2 as const,
+          taxableIncomeDeltaBase: tier2Delta,
           totals: what_if_breakdown.totals,
           breakdown: what_if_breakdown,
         };
@@ -594,7 +591,7 @@ export async function POST(req: Request) {
         })
         .filter((x: any) => {
           const id = x.strategyId;
-          return x.tier === 3 && !appliedIds.has(id);
+          return x.tier === 2 && !appliedIds.has(id);
         }),
 
       opportunity_what_if,

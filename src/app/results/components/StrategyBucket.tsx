@@ -1,11 +1,11 @@
 // src/app/results/components/StrategyBucket.tsx
 /**
- * Component for displaying strategies in a bucket (Tier 1, Tier 2, or Tier 3).
+ * Component for displaying strategies in a bucket (Tier 1 or Tier 2).
  * 
  * Prospect-friendly version showing:
  * - Strategy name and plain English summary
  * - Friendly status labels
- * - Key numbers (deduction, tax savings, cost, net savings for Tier 3)
+ * - Key numbers (deduction, tax savings, cost, net savings for Tier 2)
  * - Simple flag explanations
  */
 
@@ -16,7 +16,7 @@ import type { TaxBreakdown } from "./TaxBreakdownTable";
 
 type StrategyImpact = {
   strategyId: string;
-  tier: 1 | 2 | 3;
+  tier: 1 | 2;
   flags: string[];
   status: string | null;
   needsConfirmation: boolean | null;
@@ -28,7 +28,7 @@ type StrategyImpact = {
 
 type WhatIfScenarioData = {
   strategyId: string;
-  tier: 3;
+  tier: 2;
   taxableIncomeDeltaBase: number;
   totals: {
     federalTax: number;
@@ -40,7 +40,7 @@ type WhatIfScenarioData = {
 
 type StrategyBucketProps = {
   strategies: StrategyImpact[];
-  tier: 1 | 2 | 3;
+  tier: 1 | 2;
   title: string;
   description?: string;
   whatIfMap?: Map<string, WhatIfScenarioData>;
@@ -163,7 +163,7 @@ export function StrategyBucket({
 
   const getFriendlyFlagLabel = (flag: string): string | null => {
     if (flag === "ALREADY_IN_USE") return "Already using this";
-    if (flag === "NOT_APPLIED_POTENTIAL" && tier === 3) return "Optional";
+    if (flag === "NOT_APPLIED_POTENTIAL" && tier === 2) return "Optional";
     if (flag === "CAPPED_BY_TAXABLE_INCOME") return "Limited by your income";
     if (flag === "CAPPED_BY_TAX_LIABILITY") return "Limited by tax owed";
     // Hide other flags from prospect view
@@ -290,18 +290,18 @@ export function StrategyBucket({
             if (friendly) friendlyFlags.push(friendly);
           }
 
-          // For Tier 3: derive cost and capital required from assumptions
-          const estimatedCost = tier === 3 ? deriveEstimatedCost(strategy.strategyId, strategy.assumptions) : null;
-          const capitalRequired = tier === 3 ? deriveCapitalRequired(strategy.strategyId, strategy.assumptions) : null;
+          // For Tier 2: derive cost and capital required from assumptions
+          const estimatedCost = tier === 2 ? deriveEstimatedCost(strategy.strategyId, strategy.assumptions) : null;
+          const capitalRequired = tier === 2 ? deriveCapitalRequired(strategy.strategyId, strategy.assumptions) : null;
           const recommendedIncomeMin =
-            tier === 3 ? deriveRecommendedIncomeMin(strategy.assumptions) : null;
+            tier === 2 ? deriveRecommendedIncomeMin(strategy.assumptions) : null;
 
-          // Calculate key metrics for Tier 3 using what-if data
+          // Calculate key metrics for Tier 2 using what-if data
           let deductionAmount: number | null = null;
           let taxSavings: number | null = null;
           let hasWhatIfData = false;
 
-          if (tier === 3) {
+          if (tier === 2) {
             const whatIf = whatIfMap?.get(strategy.strategyId);
             if (whatIf && baselineBreakdown) {
               hasWhatIfData = true;
@@ -314,7 +314,7 @@ export function StrategyBucket({
             }
           }
 
-          const netSavings = tier === 3 && estimatedCost !== null && taxSavings !== null ? taxSavings - estimatedCost : null;
+          const netSavings = tier === 2 && estimatedCost !== null && taxSavings !== null ? taxSavings - estimatedCost : null;
 
           // Build reason why not applied (clear, plain English)
           const whyNotApplied: string[] = [];
@@ -384,8 +384,8 @@ export function StrategyBucket({
               {/* What this is summary - only show if exists */}
               {strategySummary && <div style={summaryStyle}>{strategySummary}</div>}
 
-              {/* Tier 3: Key numbers section */}
-              {tier === 3 && (
+              {/* Tier 2: Key numbers section */}
+              {tier === 2 && (
                 <div style={numbersSectionStyle}>
                   {strategy.strategyId !== "s_corp_conversion" && (
                     <div style={numberItemStyle}>
@@ -432,8 +432,8 @@ export function StrategyBucket({
                 </div>
               )}
 
-              {/* Tier 1-2: Estimated income reduction */}
-              {tier !== 3 && strategy.taxableIncomeDelta !== null && (
+              {/* Tier 1: Estimated income reduction */}
+              {tier === 1 && strategy.taxableIncomeDelta !== null && (
                 <div>
                   <div style={labelStyle}>Estimated deduction</div>
                   <div style={valueStyle}>{formatIncomeReduction(strategy.taxableIncomeDelta)}</div>
@@ -454,8 +454,8 @@ export function StrategyBucket({
                 </div>
               )}
 
-              {/* Recommended income minimum (Tier 3 only) */}
-              {tier === 3 && recommendedIncomeMin !== null && (
+              {/* Recommended income minimum (Tier 2 only) */}
+              {tier === 2 && recommendedIncomeMin !== null && (
                 <div style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
                   Recommended for income above {formatMoney(recommendedIncomeMin)}
                 </div>

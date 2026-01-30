@@ -12,7 +12,7 @@ type JsonRecord = Record<string, unknown>;
 
 type StrategyImpact = {
   strategyId: string;
-  tier: 1 | 2 | 3;
+  tier: 1 | 2;
   flags: string[];
   status: string | null;
   needsConfirmation: boolean | null;
@@ -24,7 +24,7 @@ type StrategyImpact = {
 
 type WhatIfScenarioData = {
   strategyId: string;
-  tier: 3;
+  tier: 2;
   taxableIncomeDeltaBase: number;
   totals: {
     federalTax: number;
@@ -197,26 +197,16 @@ export default function ResultsPage() {
                 description="These strategies are applied automatically when eligible. They stack together to reduce your taxable income."
               />
 
-              {/* Tier 2: Next best options */}
-              <div style={{ marginTop: 24 }}>
-                <StrategyBucket
-                  strategies={buckets.applied.filter((s) => s.tier === 2)}
-                  tier={2}
-                  title="Next best options"
-                  description="These strategies are applied when eligible and income thresholds are met. They stack with Tier 1 strategies."
-                />
-              </div>
-
-              {/* Tier 3: Bigger opportunities */}
+              {/* Tier 2: Bigger opportunities */}
               <div style={{ marginTop: 24 }}>
                 <StrategyBucket
                   strategies={buckets.opportunities.filter((s) => {
                     // Defensive: exclude any strategy already in applied bucket
                     return !buckets.applied.some((a) => a.strategyId === s.strategyId);
                   })}
-                  tier={3}
+                  tier={2}
                   title="Bigger opportunities to explore"
-                  description="Each strategy is calculated independently (not combined with other Tier 3 strategies)."
+                  description="Each strategy is calculated independently (not combined with other Tier 2 strategies)."
                   whatIfMap={vm.whatIfMap}
                   baselineBreakdown={vm.baselineBreakdown}
                   strategyExplanations={vm.strategyExplanations}
@@ -469,7 +459,7 @@ function normalizeStrategyImpacts(arr: unknown[]): StrategyImpact[] {
 
     const strategyId = asString(r["strategyId"]) ?? asString(r["strategy_id"]) ?? "";
     const tier = asNumber(r["tier"]);
-    if (!strategyId || !tier || (tier !== 1 && tier !== 2 && tier !== 3)) continue;
+    if (!strategyId || !tier || (tier !== 1 && tier !== 2)) continue;
 
     const taxableIncomeDelta = normalizeRange3(asRecord(r["taxableIncomeDelta"]));
     const taxLiabilityDelta = normalizeRange3(asRecord(r["taxLiabilityDelta"]));
@@ -477,7 +467,7 @@ function normalizeStrategyImpacts(arr: unknown[]): StrategyImpact[] {
 
     out.push({
       strategyId,
-      tier: tier as 1 | 2 | 3,
+      tier: tier as 1 | 2,
       flags: asStringArray(r["flags"]) ?? [],
       status: asString(r["status"]),
       needsConfirmation: asBoolean(r["needsConfirmation"]),
@@ -507,7 +497,7 @@ function normalizeWhatIfScenarios(
 
     out.push({
       strategyId,
-      tier: 3,
+      tier: 2,
       taxableIncomeDeltaBase: asNumber(r["taxableIncomeDeltaBase"]) ?? 0,
       totals: {
         federalTax: asNumber(totals["federalTax"]) ?? 0,

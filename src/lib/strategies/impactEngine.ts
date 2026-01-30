@@ -234,8 +234,8 @@ function applyStrategies(params: {
 
 /**
  * NEW: bucket-aware impact engine
- * - Core = Tier 1 + Tier 2 (if eligible+gate)
- * - What-if = each Tier 3 solo on top of core
+ * - Core = Tier 1 only (auto-applied when eligible)
+ * - What-if = each Tier 2 solo on top of core
  */
 export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput & {
   core: { impacts: StrategyImpactEstimate[]; revisedTotals: RevisedTaxTotals; appliedStrategyIds: StrategyId[] };
@@ -250,11 +250,10 @@ export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput & 
 
   const tier1 = allIds.filter((id) => STRATEGY_CATALOG[id]?.tier === 1);
   const tier2 = allIds.filter((id) => STRATEGY_CATALOG[id]?.tier === 2);
-  const tier3 = allIds.filter((id) => STRATEGY_CATALOG[id]?.tier === 3);
 
-  // Core apply set = tier1 + tier2 (auto-apply candidates)
+  // Core apply set = tier1 only (auto-apply candidates)
   const coreApply = sortByDisplayOrder(
-    [...tier1, ...tier2].filter((id) => STRATEGY_CATALOG[id]?.autoApplyWhenEligible),
+    tier1.filter((id) => STRATEGY_CATALOG[id]?.autoApplyWhenEligible),
   );
 
   const core = applyStrategies({
@@ -265,13 +264,13 @@ export function runImpactEngine(input: ImpactEngineInput): ImpactEngineOutput & 
     strategyIdsToApply: coreApply,
   });
 
-  // What-if: each tier3 strategy solo on top of core
+  // What-if: each tier2 strategy solo on top of core
   const whatIf: Record<
     StrategyId,
     { impacts: StrategyImpactEstimate[]; revisedTotals: RevisedTaxTotals; deltaFromCore: Range3 }
   > = {} as any;
 
-  for (const id of sortByDisplayOrder([...tier3])) {
+  for (const id of sortByDisplayOrder([...tier2])) {
     // apply = core + this one
     const soloRun = applyStrategies({
       intake,
