@@ -488,6 +488,26 @@ export async function POST(req: Request) {
 
     const impactsList: any[] = Array.isArray((impact as any)?.impacts) ? (impact as any).impacts : [];
 
+    // Build Set of applied strategy IDs from core.appliedStrategyIds OR from flags
+    const appliedIds = new Set<string>();
+    
+    // First, try to get from impact.core.appliedStrategyIds
+    const coreAppliedIds = (impact as any)?.core?.appliedStrategyIds;
+    if (Array.isArray(coreAppliedIds)) {
+      for (const id of coreAppliedIds) {
+        if (typeof id === "string") appliedIds.add(id);
+      }
+    }
+    
+    // Also add any strategy with APPLIED flag
+    for (const i of impactsList) {
+      const id = String(i?.strategyId ?? i?.strategy_id ?? "");
+      const flags: string[] = Array.isArray(i?.flags) ? i.flags : [];
+      if (flags.includes("APPLIED")) {
+        appliedIds.add(id);
+      }
+    }
+
     const appliedTier12 = impactsList.filter((i: any) => {
       const id = String(i?.strategyId ?? i?.strategy_id ?? "");
       const tier = getTier(id);
@@ -495,9 +515,10 @@ export async function POST(req: Request) {
       return (tier === 1 || tier === 2) && flags.includes("APPLIED");
     });
 
+    // Filter tier3 to exclude applied strategies
     const tier3 = impactsList.filter((i: any) => {
       const id = String(i?.strategyId ?? i?.strategy_id ?? "");
-      return getTier(id) === 3;
+      return getTier(id) === 3 && !appliedIds.has(id);
     });
 
     const sumAppliedTier12BaseDelta = appliedTier12.reduce((acc: number, i: any) => {
@@ -505,31 +526,37 @@ export async function POST(req: Request) {
       return acc + (typeof base === "number" ? base : 0);
     }, 0);
 
-    const opportunity_what_if = tier3.map((i: any) => {
-      const id = String(i?.strategyId ?? i?.strategy_id ?? "");
-      const base = i?.taxableIncomeDelta?.base;
-      const tier3Delta = typeof base === "number" ? base : 0;
+    // Build opportunity_what_if only for non-applied tier 3 strategies
+    const opportunity_what_if = tier3
+      .filter((i: any) => {
+        const id = String(i?.strategyId ?? i?.strategy_id ?? "");
+        return !appliedIds.has(id);
+      })
+      .map((i: any) => {
+        const id = String(i?.strategyId ?? i?.strategy_id ?? "");
+        const base = i?.taxableIncomeDelta?.base;
+        const tier3Delta = typeof base === "number" ? base : 0;
 
-      const whatIfAgi = clampMin0(baselineAgiOverride + sumAppliedTier12BaseDelta + tier3Delta);
+        const whatIfAgi = clampMin0(baselineAgiOverride + sumAppliedTier12BaseDelta + tier3Delta);
 
-      const what_if_breakdown = computeTaxBreakdown({
-        filingStatus: intake.personal.filing_status,
-        state: intake.personal.state,
-        childrenUnder17: intake.personal.children_0_17 ?? 0,
-        incomeW2,
-        businessProfit: bizProfit,
-        k401EmployeeYtd: k401Ytd,
-        agiOverride: whatIfAgi,
+        const what_if_breakdown = computeTaxBreakdown({
+          filingStatus: intake.personal.filing_status,
+          state: intake.personal.state,
+          childrenUnder17: intake.personal.children_0_17 ?? 0,
+          incomeW2,
+          businessProfit: bizProfit,
+          k401EmployeeYtd: k401Ytd,
+          agiOverride: whatIfAgi,
+        });
+
+        return {
+          strategyId: id,
+          tier: 3 as const,
+          taxableIncomeDeltaBase: tier3Delta,
+          totals: what_if_breakdown.totals,
+          breakdown: what_if_breakdown,
+        };
       });
-
-      return {
-        strategyId: id,
-        tier: 3 as const,
-        taxableIncomeDeltaBase: tier3Delta,
-        totals: what_if_breakdown.totals,
-        breakdown: what_if_breakdown,
-      };
-    });
 
     const strategy_buckets = {
       applied: impactsList
@@ -564,7 +591,10 @@ export async function POST(req: Request) {
             assumptions: Array.isArray(i?.assumptions) ? i.assumptions : [],
           };
         })
-        .filter((x: any) => x.tier === 3),
+        .filter((x: any) => {
+          const id = x.strategyId;
+          return x.tier === 3 && !appliedIds.has(id);
+        }),
 
       opportunity_what_if,
     };

@@ -18,6 +18,7 @@ type WhatIfScenarioProps = {
   breakdown: TaxBreakdown;
   taxableIncomeDeltaBase: number;
   baselineBreakdown: TaxBreakdown;
+  revisedBreakdown: TaxBreakdown;
   assumptions?: Array<{ id: string; category: string; value: unknown }>;
 };
 
@@ -95,6 +96,7 @@ export function WhatIfScenario({
   breakdown,
   taxableIncomeDeltaBase,
   baselineBreakdown,
+  revisedBreakdown,
   assumptions,
 }: WhatIfScenarioProps) {
   const [showDetails, setShowDetails] = useState(false);
@@ -109,10 +111,46 @@ export function WhatIfScenario({
   const capitalRequired = deriveCapitalRequired(strategyId, assumptions);
   const recommendedIncomeMin = deriveRecommendedIncomeMin(assumptions);
 
-  // Calculate key metrics
+  // Calculate key metrics using scenario-specific totals
   const deductionAmount = Math.abs(taxableIncomeDeltaBase);
-  const taxSavings = Math.max(0, baselineBreakdown.totals.totalTax - breakdown.totals.totalTax);
+  
+  // Total savings vs baseline (what-if scenario vs baseline)
+  const totalSavingsVsBaseline = Math.max(0, baselineBreakdown.totals.totalTax - breakdown.totals.totalTax);
+  
+  // Incremental savings vs current plan (what-if scenario vs core applied plan)
+  const incrementalSavingsVsCore = Math.max(0, revisedBreakdown.totals.totalTax - breakdown.totals.totalTax);
+  
+  // For display, use incremental savings as the primary metric (what-if vs current plan)
+  const taxSavings = incrementalSavingsVsCore;
+  
+  // Calculate percent-of-deduction metric (clamped to [0, 1])
+  const deductionAbs = Math.abs(taxableIncomeDeltaBase);
+  const pctOfDeduction = deductionAbs > 0 
+    ? Math.max(0, Math.min(1, incrementalSavingsVsCore / deductionAbs))
+    : 0;
+  
   const netSavings = estimatedCost !== null ? taxSavings - estimatedCost : null;
+
+  // Dev-only invariant check: ensure incremental savings is computed from scenario totals
+  if (process.env.NODE_ENV !== "production") {
+    const scenarioTotals = breakdown.totals;
+    const coreAppliedTotals = revisedBreakdown.totals;
+    const computedIncremental = coreAppliedTotals.totalTax - scenarioTotals.totalTax;
+    const diff = Math.abs(computedIncremental - incrementalSavingsVsCore);
+    
+    if (diff > 1) { // Allow 1 dollar rounding tolerance
+      console.warn(
+        `[What-If Invariant] Incremental savings mismatch for ${strategyId}. ` +
+        `Computed: ${computedIncremental}, Displayed: ${incrementalSavingsVsCore}. ` +
+        `Difference: ${diff}`,
+        {
+          strategyId,
+          scenarioTotals,
+          coreAppliedTotals,
+        }
+      );
+    }
+  }
 
   // Check if user income is below recommended minimum
   const userIncome = baselineBreakdown.gross_income;
@@ -265,8 +303,14 @@ export function WhatIfScenario({
           <div style={numberValueStyle}>{formatMoney(deductionAmount)}</div>
         </div>
         <div style={numberItemStyle}>
-          <div style={numberLabelStyle}>Estimated tax savings</div>
-          <div style={{ ...numberValueStyle, color: "#117a2a" }}>{formatMoney(taxSavings)}</div>
+          <div style={numberLabelStyle}>Additional savings vs current plan</div>
+          <div style={{ ...numberValueStyle, color: "#117a2a" }}>{formatMoney(incrementalSavingsVsCore)}</div>
+        </div>
+        <div style={numberItemStyle}>
+          <div style={numberLabelStyle}>Total savings vs baseline</div>
+          <div style={{ ...numberValueStyle, color: "#117a2a", fontSize: 18 }}>
+            {formatMoney(totalSavingsVsBaseline)}
+          </div>
         </div>
         <div style={numberItemStyle}>
           <div style={numberLabelStyle}>Estimated cost</div>

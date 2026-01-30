@@ -232,6 +232,7 @@ export default function ResultsPage() {
                         breakdown={whatIf.breakdown}
                         taxableIncomeDeltaBase={whatIf.taxableIncomeDeltaBase}
                         baselineBreakdown={vm.baselineBreakdown!}
+                        revisedBreakdown={vm.revisedBreakdown!}
                         {...(assumptions ? { assumptions } : {})}
                       />
                     );
@@ -361,18 +362,31 @@ function buildAppliedStrategies(buckets: StrategyBuckets | null): Array<{
     return true;
   });
 
-  return applied.map((s) => {
+  // Defensive deduplication: ensure each strategyId appears only once
+  // If duplicates exist, keep the one from the applied bucket (prefer applied over opportunities)
+  const dedupeMap = new Map<string, { strategyId: string; label: string; agiDeltaBase: number }>();
+  
+  for (const s of applied) {
     const catalogEntry =
       s.strategyId in STRATEGY_CATALOG ? STRATEGY_CATALOG[s.strategyId as StrategyId] : undefined;
     const label = catalogEntry?.uiLabel ?? s.strategyId;
     const agiDeltaBase = s.taxableIncomeDelta!.base; // Already checked for null above
 
-    return {
-      strategyId: s.strategyId,
-      label,
-      agiDeltaBase,
-    };
-  });
+    // If already exists, prefer the one from applied bucket (check if current is from applied)
+    const isFromApplied = buckets.applied.some((a) => a.strategyId === s.strategyId);
+    const existing = dedupeMap.get(s.strategyId);
+    const existingIsFromApplied = existing && buckets.applied.some((a) => a.strategyId === s.strategyId);
+    
+    if (!existing || (isFromApplied && !existingIsFromApplied)) {
+      dedupeMap.set(s.strategyId, {
+        strategyId: s.strategyId,
+        label,
+        agiDeltaBase,
+      });
+    }
+  }
+
+  return Array.from(dedupeMap.values());
 }
 
 function normalizeBreakdown(v: JsonRecord | null): TaxBreakdown | null {

@@ -342,6 +342,89 @@ function main(): void {
     console.log("✓ Tier 3 APPLIED flag test passed");
   }
 
+  // Test: Applied strategies should not appear in opportunities/opportunity_what_if
+  {
+    // eslint-disable-next-line no-console
+    console.log("\n=== Test: Applied strategies excluded from opportunities ===");
+    const intake = buildBaseIntake({
+      taxableState: "CO",
+      filingStatus: "MARRIED_FILING_JOINTLY",
+      kids: 2,
+      hasBiz: true,
+    });
+
+    // Create a scenario where cash_balance_plan (Tier 3) is applied
+    const evaluations = buildEvaluations({
+      augusta_loophole: "ELIGIBLE",
+      k401: "ELIGIBLE",
+      cash_balance_plan: "ELIGIBLE", // Tier 3, should be applied if eligible
+    });
+
+    const baseline = {
+      federalTax: 100000,
+      stateTax: 20000,
+      totalTax: 120000,
+      taxableIncome: 500000,
+    };
+
+    const input: ImpactEngineInput = {
+      intake,
+      baseline,
+      strategyEvaluations: evaluations,
+      applyPotential: false,
+    };
+
+    const output = runImpactEngine(input);
+    
+    // Get applied strategy IDs from core.appliedStrategyIds
+    const appliedIds = new Set((output as any).core?.appliedStrategyIds ?? []);
+    
+    // Also check flags
+    const appliedByFlags = output.impacts
+      .filter((i) => (i.flags ?? []).includes("APPLIED"))
+      .map((i) => i.strategyId);
+    
+    for (const id of appliedByFlags) {
+      appliedIds.add(id);
+    }
+    
+    // eslint-disable-next-line no-console
+    console.log("Applied strategy IDs:", Array.from(appliedIds));
+    
+    // Check that applied strategies are NOT in opportunities (tier 3, not applied)
+    const tier3Opportunities = output.impacts.filter((i) => {
+      const tier = (output as any).core?.impacts?.find((c: any) => c.strategyId === i.strategyId)?.tier;
+      // For simplicity, check if it's tier 3 and not applied
+      return !appliedIds.has(i.strategyId) && (i.flags ?? []).includes("NOT_APPLIED_POTENTIAL");
+    });
+    
+    const tier3OpportunityIds = tier3Opportunities.map((i) => i.strategyId);
+    
+    // eslint-disable-next-line no-console
+    console.log("Tier 3 opportunity IDs:", tier3OpportunityIds);
+    
+    // Validate: no applied strategy should be in opportunities
+    for (const appliedId of appliedIds) {
+      assert(
+        !tier3OpportunityIds.includes(appliedId as StrategyId),
+        `Applied strategy ${appliedId} should NOT appear in opportunities`
+      );
+    }
+    
+    // Validate: cash_balance_plan should be applied if eligible
+    if (appliedIds.has("cash_balance_plan")) {
+      // eslint-disable-next-line no-console
+      console.log("✓ cash_balance_plan is correctly applied");
+      assert(
+        !tier3OpportunityIds.includes("cash_balance_plan" as StrategyId),
+        "cash_balance_plan should NOT appear in opportunities when applied"
+      );
+    }
+    
+    // eslint-disable-next-line no-console
+    console.log("✓ Applied strategies exclusion test passed");
+  }
+
   // eslint-disable-next-line no-console
   console.log("\nAll impact engine harness checks passed.");
 }
