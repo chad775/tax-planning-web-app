@@ -446,7 +446,7 @@ function normalizeBreakdown(v: JsonRecord | null): TaxBreakdown | null {
     totals: {
       federalTax: asNumber(totals["federalTax"]) ?? 0,
       stateTax: asNumber(totals["stateTax"]) ?? 0,
-      payrollTax: asNumber(totals["payrollTax"]),
+      payrollTax: asNumber(totals["payrollTax"]) ?? 0,
       totalTax: asNumber(totals["totalTax"]) ?? 0,
     },
   };
