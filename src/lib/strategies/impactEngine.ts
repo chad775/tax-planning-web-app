@@ -128,6 +128,7 @@ function applyStrategies(params: {
   let revised: BaselineTaxTotals = {
     federalTax: Math.max(0, baseline.federalTax),
     stateTax: Math.max(0, baseline.stateTax),
+    payrollTax: Math.max(0, baseline.payrollTax ?? 0),
     totalTax: Math.max(0, baseline.totalTax),
     taxableIncome: Math.max(0, baseline.taxableIncome),
   };
