@@ -10,6 +10,7 @@ import type {
   StrategyImpactEstimate,
   StrategyEvaluationStatus,
 } from "./impactTypes";
+import { computePayrollTaxes2025 } from "../tax/payroll/payroll2025";
 
 /**
  * Deterministic impact models registry (v1).
