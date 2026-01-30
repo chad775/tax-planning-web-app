@@ -620,7 +620,9 @@ export const filmCreditsModel: ImpactModel = {
  * S-Corp conversion reduces payroll taxes (self-employment tax) by paying reasonable salary
  * and taking the rest as distributions (not subject to SE tax).
  * 
- * This model calculates tax liability delta (payroll tax savings), not taxable income delta.
+ * This model calculates actual payroll tax savings by comparing:
+ * - Baseline: SE tax on full net profit (assuming SOLE_PROP/PARTNERSHIP/LLC)
+ * - Post-conversion: FICA tax on reasonable salary only (S_CORP)
  */
 export const sCorpConversionModel: ImpactModel = {
   kind: "credit_range",
@@ -631,7 +633,7 @@ export const sCorpConversionModel: ImpactModel = {
       return {
         model: "credit_range",
         needsConfirmation: true,
-        taxLiabilityDelta: makeRange3(0, 0, 0),
+        payrollTaxDelta: makeRange3(0, 0, 0),
         assumptions: [
           { id: "BELOW_MIN_PROFIT_THRESHOLD", category: "CAP", value: 100000 },
         ],
@@ -640,27 +642,64 @@ export const sCorpConversionModel: ImpactModel = {
       };
     }
 
+    const entityType = ctx.intake.business?.entity_type;
+    const filingStatus = ctx.intake.personal.filing_status;
+    const w2Wages = Math.max(0, ctx.intake.personal.income_excl_business ?? 0);
+
+    // Baseline scenario: compute payroll tax assuming current entity (SOLE_PROP/PARTNERSHIP/LLC)
+    const baselineIntake: NormalizedIntake2025 = {
+      ...ctx.intake,
+      business: {
+        ...ctx.intake.business,
+        entity_type: entityType === "S_CORP" ? "SOLE_PROP" : entityType, // Assume eligible type for baseline
+      },
+    };
+    const baselinePayroll = computePayrollTaxes2025(baselineIntake, {
+      taxYear: 2025,
+      baselineTaxableIncome: ctx.baseline.taxableIncome,
+    });
+    const baselinePayrollTax = baselinePayroll.payrollTaxTotal;
+
+    // Post-conversion scenario: S-Corp with reasonable salary
     // Reasonable salary = min(33% of net_profit, $120,000)
     const reasonableSalary = Math.min(netProfit * 0.33, 120000);
-    
-    // Avoided income = income above salary, capped at $176,100 (2025 SE tax wage base)
-    const avoidedIncome = Math.min(netProfit - reasonableSalary, 176100);
-    
-    // Tax savings = avoided income * 15.3% (self-employment tax rate)
-    const taxSavings = avoidedIncome * 0.153;
-    
+
+    // Post-conversion: S_CORP entity
+    // - Business net_profit stays the same (distributions are not subject to SE tax)
+    // - Only reasonable salary is subject to FICA (employee + employer portion)
+    // - Add salary to W-2 wages for FICA calculation
+    const postConversionIntake: NormalizedIntake2025 = {
+      ...ctx.intake,
+      business: {
+        ...ctx.intake.business,
+        entity_type: "S_CORP",
+        net_profit: netProfit, // Net profit stays the same (distributions)
+      },
+      personal: {
+        ...ctx.intake.personal,
+        income_excl_business: w2Wages + reasonableSalary, // Add salary to W-2 wages for FICA
+      },
+    };
+    const postPayroll = computePayrollTaxes2025(postConversionIntake, {
+      taxYear: 2025,
+      baselineTaxableIncome: ctx.baseline.taxableIncome,
+    });
+    const postPayrollTax = postPayroll.payrollTaxTotal;
+
+    // Payroll tax savings = baseline - post
+    const payrollTaxSavings = baselinePayrollTax - postPayrollTax;
+
     // Conservative range: 80% to 120% of base
-    const taxLiabilityDelta = makeRange3(
-      -taxSavings * 1.2, // More conservative (larger negative = more savings)
-      -taxSavings,
-      -taxSavings * 0.8, // Less conservative (smaller negative = less savings)
+    const payrollTaxDelta = makeRange3(
+      -payrollTaxSavings * 1.2, // More conservative (larger negative = more savings)
+      -payrollTaxSavings,
+      -payrollTaxSavings * 0.8, // Less conservative (smaller negative = less savings)
     );
 
     const assumptions: ImpactAssumption[] = [
       { id: "REASONABLE_SALARY", category: "DEFAULT", value: reasonableSalary },
-      { id: "AVOIDED_INCOME", category: "DEFAULT", value: avoidedIncome },
-      { id: "SE_TAX_RATE", category: "DEFAULT", value: 0.153 },
-      { id: "SE_WAGE_BASE_2025", category: "CAP", value: 176100 },
+      { id: "BASELINE_PAYROLL_TAX", category: "DEFAULT", value: baselinePayrollTax },
+      { id: "POST_CONVERSION_PAYROLL_TAX", category: "DEFAULT", value: postPayrollTax },
       { id: "REQUIRES_PAYROLL_SETUP", category: "DATA_GAP", value: true },
       { id: "REQUIRES_REASONABLE_SALARY", category: "DATA_GAP", value: true },
       { id: "CONSERVATIVE_RANGE", category: "CONSERVATISM", value: true },
@@ -668,25 +707,26 @@ export const sCorpConversionModel: ImpactModel = {
 
     const flags: ImpactFlag[] = [];
 
-    // Clamp to baseline total tax
-    const clampedDelta = clampTaxLiabilityDeltaToBaseline(ctx.baseline.totalTax, taxLiabilityDelta);
+    // Clamp to baseline payroll tax
+    const baselinePayrollTaxForClamp = Math.max(0, ctx.baseline.payrollTax ?? baselinePayrollTax);
+    const clampedDelta = clampTaxLiabilityDeltaToBaseline(baselinePayrollTaxForClamp, payrollTaxDelta);
     if (
-      clampedDelta.low !== taxLiabilityDelta.low ||
-      clampedDelta.base !== taxLiabilityDelta.base ||
-      clampedDelta.high !== taxLiabilityDelta.high
+      clampedDelta.low !== payrollTaxDelta.low ||
+      clampedDelta.base !== payrollTaxDelta.base ||
+      clampedDelta.high !== payrollTaxDelta.high
     ) {
       flags.push("CAPPED_BY_TAX_LIABILITY");
       assumptions.push({
-        id: "CAPPED_BY_BASELINE_TOTAL_TAX",
+        id: "CAPPED_BY_BASELINE_PAYROLL_TAX",
         category: "CAP",
-        value: ctx.baseline.totalTax,
+        value: baselinePayrollTaxForClamp,
       });
     }
 
     const estimate: Omit<StrategyImpactEstimate, "strategyId" | "status"> = {
       model: "credit_range",
       needsConfirmation: true,
-      taxLiabilityDelta: clampedDelta,
+      payrollTaxDelta: clampedDelta,
       assumptions,
       inputsToTighten: [],
       flags,

@@ -42,6 +42,7 @@ export type TaxBreakdown = {
   totals: {
     federalTax: number;
     stateTax: number;
+    payrollTax?: number;
     totalTax: number;
   };
 };
@@ -147,6 +148,12 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
             <div style={labelStyle}>State Tax</div>
             <div style={valueStyle}>{formatMoney(baseline.state.tax)}</div>
           </div>
+          {(baseline.totals.payrollTax !== undefined && baseline.totals.payrollTax > 0) && (
+            <div style={rowStyle}>
+              <div style={labelStyle}>Payroll Tax</div>
+              <div style={valueStyle}>{formatMoney(baseline.totals.payrollTax)}</div>
+            </div>
+          )}
           <div style={{ ...rowStyle, borderTop: "2px solid #111", paddingTop: 12, marginTop: 8 }}>
             <div style={{ ...labelStyle, fontWeight: 900 }}>Total Tax</div>
             <div style={{ ...valueStyle, fontWeight: 900 }}>{formatMoney(baseline.totals.totalTax)}</div>
@@ -197,6 +204,12 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
             <div style={labelStyle}>State Tax</div>
             <div style={valueStyle}>{formatMoney(revised.state.tax)}</div>
           </div>
+          {(revised.totals.payrollTax !== undefined && revised.totals.payrollTax > 0) && (
+            <div style={rowStyle}>
+              <div style={labelStyle}>Payroll Tax</div>
+              <div style={valueStyle}>{formatMoney(revised.totals.payrollTax)}</div>
+            </div>
+          )}
           <div style={{ ...rowStyle, borderTop: "2px solid #111", paddingTop: 12, marginTop: 8 }}>
             <div style={{ ...labelStyle, fontWeight: 900 }}>Total Tax</div>
             <div style={{ ...valueStyle, fontWeight: 900 }}>{formatMoney(revised.totals.totalTax)}</div>

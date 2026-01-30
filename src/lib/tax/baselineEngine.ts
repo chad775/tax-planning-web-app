@@ -7,6 +7,7 @@ import type { BaselineTaxTotals } from "../../contracts/baseline";
 import { computeTaxableIncome2025, computeFederalBaseline2025 } from "./federal";
 import { computeStateIncomeTax2025 } from "./state";
 import type { StateFilingStatus2025 } from "./stateTables";
+import { computePayrollTaxes2025 } from "./payroll/payroll2025";
 
 /**
  * Baseline tax engine (2025) — deterministic estimate using:
@@ -61,11 +62,16 @@ export async function runBaselineTaxEngine(intake: NormalizedIntake2025): Promis
     clampMin0(firstNumber(stAny?.stateIncomeTax, stAny?.tax, stAny?.stateTax) ?? 0),
   );
 
-  const totalTax = roundToCents(clampMin0(federalTax + stateTax));
+  // Compute payroll taxes
+  const payrollResult = computePayrollTaxes2025(intake, { taxYear: 2025, baselineTaxableIncome: taxableIncome });
+  const payrollTax = roundToCents(clampMin0(payrollResult.payrollTaxTotal));
+
+  const totalTax = roundToCents(clampMin0(federalTax + stateTax + payrollTax));
 
   return {
     federalTax,
     stateTax,
+    payrollTax,
     totalTax,
     taxableIncome: roundToCents(taxableIncome),
   } as BaselineTaxTotals;

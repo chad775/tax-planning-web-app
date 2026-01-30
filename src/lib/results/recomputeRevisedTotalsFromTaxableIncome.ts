@@ -4,12 +4,15 @@ import type { FilingStatus2025 } from "@/lib/tax/federal";
 import { computeFederalBaseline2025, getStandardDeduction2025 } from "@/lib/tax/federal";
 import { computeStateIncomeTaxFromString2025 } from "@/lib/tax/state";
 import type { StateFilingStatus2025 } from "@/lib/tax/stateTables";
+import { computePayrollTaxes2025 } from "@/lib/tax/payroll/payroll2025";
+import type { NormalizedIntake2025 } from "@/contracts/intake";
 
 type Money = number;
 
 export type Totals = {
   federalTax: Money;
   stateTax: Money;
+  payrollTax: Money;
   totalTax: Money;
   taxableIncome: Money;
 };
@@ -118,11 +121,15 @@ export function recomputeRevisedTotalsFromTaxableIncome(params: {
     });
 
     const stateTax = roundToCents(clampMin0(stateOut.stateIncomeTax));
-    const totalTax = roundToCents(clampMin0(federalTax + stateTax));
+    
+    // Payroll tax remains the same as baseline (unless s_corp_conversion is applied, which is handled via payrollTaxDelta)
+    const payrollTax = baseline.payrollTax ?? 0;
+    const totalTax = roundToCents(clampMin0(federalTax + stateTax + payrollTax));
 
     return {
       federalTax,
       stateTax,
+      payrollTax,
       totalTax,
       taxableIncome: roundToCents(taxableIncome),
     };

@@ -25,6 +25,9 @@ function buildBaseIntake(args: {
   filingStatus?: NormalizedIntake2025["personal"]["filing_status"];
   kids?: number;
   hasBiz?: boolean;
+  entityType?: NormalizedIntake2025["business"]["entity_type"];
+  netProfit?: number;
+  incomeExclBusiness?: number;
   k401ytd?: number;
   strategiesInUse?: StrategyId[];
 }): NormalizedIntake2025 {
@@ -32,14 +35,14 @@ function buildBaseIntake(args: {
     personal: {
       filing_status: args.filingStatus ?? "MARRIED_FILING_JOINTLY",
       children_0_17: args.kids ?? 2,
-      income_excl_business: 0,
+      income_excl_business: args.incomeExclBusiness ?? 0,
       state: args.taxableState ?? "CO",
     },
     business: {
       has_business: args.hasBiz ?? true,
-      entity_type: "S_CORP",
+      entity_type: args.entityType ?? "S_CORP",
       employees_count: 2,
-      net_profit: 0,
+      net_profit: args.netProfit ?? 0,
     },
     retirement: {
       k401_employee_contrib_ytd: args.k401ytd ?? 0,
@@ -131,6 +134,7 @@ function main(): void {
         taxableIncome: 250_000,
         federalTax: 60_000,
         stateTax: 15_000,
+        payrollTax: 0,
         totalTax: 75_000,
       },
       strategyEvaluations: evaluations,
@@ -174,6 +178,7 @@ function main(): void {
         taxableIncome: 750_000,
         federalTax: 240_000,
         stateTax: 60_000,
+        payrollTax: 0,
         totalTax: 300_000,
       },
       strategyEvaluations: evaluations,
@@ -214,6 +219,7 @@ function main(): void {
         taxableIncome: 1_500_000,
         federalTax: 520_000,
         stateTax: 120_000,
+        payrollTax: 0,
         totalTax: 640_000,
       },
       strategyEvaluations: evaluations,
@@ -249,6 +255,7 @@ function main(): void {
       taxableIncome: 400_000,
       federalTax: 120_000,
       stateTax: 30_000,
+      payrollTax: 0,
       totalTax: 150_000,
     };
 
@@ -303,6 +310,7 @@ function main(): void {
     const baseline = {
       federalTax: 100000,
       stateTax: 20000,
+      payrollTax: 0,
       totalTax: 120000,
       taxableIncome: 500000,
     };
@@ -363,6 +371,7 @@ function main(): void {
     const baseline = {
       federalTax: 100000,
       stateTax: 20000,
+      payrollTax: 0,
       totalTax: 120000,
       taxableIncome: 500000,
     };
@@ -425,8 +434,104 @@ function main(): void {
     console.log("✓ Applied strategies exclusion test passed");
   }
 
+  // Test: Payroll tax calculation and S-corp conversion
+  {
+    // eslint-disable-next-line no-console
+    console.log("\n=== Test: Payroll tax and S-corp conversion ===");
+    const intake = buildBaseIntake({
+      taxableState: "CO",
+      filingStatus: "MARRIED_FILING_JOINTLY",
+      kids: 2,
+      hasBiz: true,
+      entityType: "SOLE_PROP", // Start as SOLE_PROP
+      netProfit: 235000, // High enough for s_corp_conversion
+      incomeExclBusiness: 200000, // W-2 wages
+    });
+
+    const evaluations = buildEvaluations({
+      s_corp_conversion: "ELIGIBLE",
+    });
+
+    const baseline = {
+      federalTax: 50000,
+      stateTax: 10000,
+      payrollTax: 20000, // Estimated SE tax for SOLE_PROP with $235k profit
+      totalTax: 80000,
+      taxableIncome: 400000,
+    };
+
+    const input: ImpactEngineInput = {
+      intake,
+      baseline: baseline as any,
+      strategyEvaluations: evaluations,
+      applyPotential: false,
+    };
+
+    const output = runImpactEngine(input);
+
+    const sCorpImpact = output.impacts.find((i) => i.strategyId === "s_corp_conversion");
+    assert(sCorpImpact !== undefined, "S-corp conversion impact should exist");
+    
+    if (!sCorpImpact) {
+      throw new Error("S-corp conversion impact not found");
+    }
+
+    // Verify payrollTaxDelta exists and is negative (savings)
+    assert(
+      sCorpImpact.payrollTaxDelta !== undefined,
+      "S-corp conversion should have payrollTaxDelta",
+    );
+    assert(
+      sCorpImpact.payrollTaxDelta!.base < 0,
+      "S-corp conversion payrollTaxDelta should be negative (savings)",
+    );
+
+    // Verify reasonable salary assumption
+    const reasonableSalaryAssumption = sCorpImpact.assumptions.find(
+      (a) => a.id === "REASONABLE_SALARY",
+    );
+    assert(
+      reasonableSalaryAssumption !== undefined,
+      "S-corp conversion should have REASONABLE_SALARY assumption",
+    );
+    const reasonableSalary = reasonableSalaryAssumption!.value as number;
+    assert(
+      reasonableSalary <= 120000 && reasonableSalary > 0,
+      `Reasonable salary should be <= $120k and > 0, got ${reasonableSalary}`,
+    );
+
+    // Verify baseline and post payroll tax assumptions exist
+    const baselinePayrollAssumption = sCorpImpact.assumptions.find(
+      (a) => a.id === "BASELINE_PAYROLL_TAX",
+    );
+    const postPayrollAssumption = sCorpImpact.assumptions.find(
+      (a) => a.id === "POST_CONVERSION_PAYROLL_TAX",
+    );
+    assert(
+      baselinePayrollAssumption !== undefined && postPayrollAssumption !== undefined,
+      "S-corp conversion should have baseline and post payroll tax assumptions",
+    );
+
+    const baselinePayrollTax = baselinePayrollAssumption!.value as number;
+    const postPayrollTax = postPayrollAssumption!.value as number;
+    assert(
+      baselinePayrollTax > postPayrollTax,
+      `Baseline payroll tax (${baselinePayrollTax}) should be greater than post-conversion (${postPayrollTax})`,
+    );
+
+    // Verify payroll tax savings matches the delta
+    const expectedSavings = baselinePayrollTax - postPayrollTax;
+    assert(
+      approxEqual(Math.abs(sCorpImpact.payrollTaxDelta!.base), expectedSavings, 1),
+      `Payroll tax delta should match savings calculation. Expected: ${expectedSavings}, got: ${Math.abs(sCorpImpact.payrollTaxDelta!.base)}`,
+    );
+
+    // eslint-disable-next-line no-console
+    console.log("✓ Payroll tax and S-corp conversion test passed");
+  }
+
   // eslint-disable-next-line no-console
-  console.log("\nAll impact engine harness checks passed.");
+  console.log("\n✅ All impact engine tests passed!");
 }
 
 main();

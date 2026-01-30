@@ -17,7 +17,9 @@ export interface BaselineTaxTotals {
   federalTax: number;
   /** State tax liability for the year (>= 0). */
   stateTax: number;
-  /** Total tax liability for the year (>= 0). */
+  /** Payroll tax liability for the year (>= 0): self-employment tax, FICA on wages, additional Medicare tax. */
+  payrollTax: number;
+  /** Total tax liability for the year (>= 0): federal + state + payroll. */
   totalTax: number;
 
   /**

@@ -60,24 +60,32 @@ function applyBaseTaxLiabilityDelta(totals: BaselineTaxTotals, baseDelta: number
   const totalBefore = Math.max(0, totals.totalTax);
   const federalBefore = Math.max(0, totals.federalTax);
   const stateBefore = Math.max(0, totals.stateTax);
+  const payrollBefore = Math.max(0, totals.payrollTax ?? 0);
 
   const cappedDelta = Math.min(0, Math.max(baseDelta, -totalBefore));
 
   if (totalBefore <= 0) {
-    return { ...totals, federalTax: 0, stateTax: 0, totalTax: 0 };
+    return { ...totals, federalTax: 0, stateTax: 0, payrollTax: payrollBefore, totalTax: payrollBefore };
   }
 
+  // For payroll tax savings (negative delta), apply directly to payroll tax
+  // For other tax savings, distribute proportionally to federal/state
+  // If delta is from payroll tax savings, it should reduce payroll tax
+  // For now, we'll distribute proportionally but this will be overridden by s_corp_conversion model
   const federalShare = totalBefore > 0 ? federalBefore / totalBefore : 0;
   const stateShare = totalBefore > 0 ? stateBefore / totalBefore : 0;
+  const payrollShare = totalBefore > 0 ? payrollBefore / totalBefore : 0;
 
   const federalAfter = Math.max(0, federalBefore + cappedDelta * federalShare);
   const stateAfter = Math.max(0, stateBefore + cappedDelta * stateShare);
+  const payrollAfter = Math.max(0, payrollBefore + cappedDelta * payrollShare);
 
   return {
     ...totals,
     federalTax: federalAfter,
     stateTax: stateAfter,
-    totalTax: Math.max(0, federalAfter + stateAfter),
+    payrollTax: payrollAfter,
+    totalTax: Math.max(0, federalAfter + stateAfter + payrollAfter),
   };
 }
 
@@ -209,6 +217,35 @@ function applyStrategies(params: {
       }
 
       impactsById.set(strategyId, withFlags({ ...afterIncome, taxLiabilityDelta: clamped }, Array.from(flags)));
+    }
+
+    const afterLiability = impactsById.get(strategyId)!;
+
+    // payroll tax deltas (applied directly to payroll tax)
+    if (afterLiability.payrollTaxDelta) {
+      const payrollBefore = Math.max(0, revised.payrollTax ?? 0);
+      const clamped = clampTaxLiabilityDeltaToBaseline(payrollBefore, afterLiability.payrollTaxDelta);
+
+      // Apply payroll tax delta directly to payroll tax
+      const payrollAfter = Math.max(0, payrollBefore + clamped.base);
+      revised = {
+        ...revised,
+        payrollTax: payrollAfter,
+        totalTax: Math.max(0, revised.federalTax + revised.stateTax + payrollAfter),
+      };
+
+      // Add to total tax delta
+      totalTaxDelta = addRange(totalTaxDelta, clamped);
+
+      if (
+        clamped.low !== afterLiability.payrollTaxDelta.low ||
+        clamped.base !== afterLiability.payrollTaxDelta.base ||
+        clamped.high !== afterLiability.payrollTaxDelta.high
+      ) {
+        flags.add("CAPPED_BY_TAX_LIABILITY");
+      }
+
+      impactsById.set(strategyId, withFlags({ ...afterLiability, payrollTaxDelta: clamped }, Array.from(flags)));
     }
 
     const finalImpact = impactsById.get(strategyId)!;

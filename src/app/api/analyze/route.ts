@@ -27,6 +27,7 @@ import {
 
 import { computeStateIncomeTax2025 } from "../../../lib/tax/state";
 import { asStateCode, type StateCode } from "../../../lib/tax/stateTables";
+import { computePayrollTaxes2025 } from "../../../lib/tax/payroll/payroll2025";
 
 // ✅ JSON import (bundled by Next/Vercel)
 import strategyRulesJson from "../../../lib/strategies/strategy-rules.json";
@@ -217,6 +218,10 @@ function computeTaxBreakdown(params: {
   businessProfit: number;
   k401EmployeeYtd: number;
 
+  // For payroll tax calculation
+  hasBusiness?: boolean;
+  entityType?: NormalizedIntake2025["business"]["entity_type"];
+
   // If provided, we recompute with this AGI directly (for revised scenarios).
   agiOverride?: number;
 }) {
@@ -263,7 +268,36 @@ const stateCode: StateCode = stateCodeRaw;
   });
 
   const stateTax = roundToCents(clampMin0(stAny?.stateIncomeTax ?? stAny?.tax ?? stAny?.stateTax ?? 0));
-  const totalTax = roundToCents(clampMin0(federalTax + stateTax));
+
+  // Compute payroll tax if business info is provided
+  let payrollTax = 0;
+  if (params.hasBusiness !== undefined && params.entityType !== undefined) {
+    const payrollIntake: NormalizedIntake2025 = {
+      personal: {
+        filing_status: params.filingStatus,
+        children_0_17: params.childrenUnder17,
+        income_excl_business: params.incomeW2,
+        state: stateCode,
+      },
+      business: {
+        has_business: params.hasBusiness,
+        entity_type: params.entityType,
+        employees_count: 0, // Not used for payroll tax calculation
+        net_profit: params.businessProfit,
+      },
+      retirement: {
+        k401_employee_contrib_ytd: params.k401EmployeeYtd,
+      },
+      strategies_in_use: [],
+    };
+    const payrollResult = computePayrollTaxes2025(payrollIntake, {
+      taxYear: 2025,
+      baselineTaxableIncome: taxableIncome,
+    });
+    payrollTax = roundToCents(clampMin0(payrollResult.payrollTaxTotal));
+  }
+
+  const totalTax = roundToCents(clampMin0(federalTax + stateTax + payrollTax));
 
   return {
     gross_income: grossIncome,
@@ -290,6 +324,7 @@ const stateCode: StateCode = stateCodeRaw;
     totals: {
       federalTax,
       stateTax,
+      payrollTax,
       totalTax,
     },
   };
@@ -462,6 +497,8 @@ export async function POST(req: Request) {
       incomeW2,
       businessProfit: bizProfit,
       k401EmployeeYtd: k401Ytd,
+      hasBusiness: intake.business.has_business,
+      entityType: intake.business.entity_type,
       agiOverride: baselineAgiOverride,
     });
 
@@ -479,6 +516,8 @@ export async function POST(req: Request) {
       incomeW2,
       businessProfit: bizProfit,
       k401EmployeeYtd: k401Ytd,
+      hasBusiness: intake.business.has_business,
+      entityType: intake.business.entity_type,
       agiOverride: revisedAgiBase,
     });
 
@@ -544,6 +583,8 @@ export async function POST(req: Request) {
           incomeW2,
           businessProfit: bizProfit,
           k401EmployeeYtd: k401Ytd,
+          hasBusiness: intake.business.has_business,
+          entityType: intake.business.entity_type,
           agiOverride: whatIfAgi,
         });
 

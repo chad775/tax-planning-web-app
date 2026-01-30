@@ -116,7 +116,9 @@ export interface BaselineTaxTotals {
   federalTax: number;
   /** State tax liability for the year (>= 0). */
   stateTax: number;
-  /** Total tax liability for the year (>= 0). */
+  /** Payroll tax liability for the year (>= 0): self-employment tax, FICA on wages, additional Medicare tax. */
+  payrollTax: number;
+  /** Total tax liability for the year (>= 0): federal + state + payroll. */
   totalTax: number;
 
   /**
@@ -218,6 +220,13 @@ export interface StrategyImpactEstimate {
    * Present for credit_range (and may be present for unknown_range as minimal estimate).
    */
   taxLiabilityDelta?: Range3;
+
+  /**
+   * Estimated delta to payroll tax (low/base/high).
+   * Present for strategies that specifically reduce payroll taxes (e.g., S-corp conversion).
+   * Negative values indicate payroll tax savings.
+   */
+  payrollTaxDelta?: Range3;
 
   /**
    * True if the strategy has insufficient data and should not be treated as reliable.
