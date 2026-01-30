@@ -188,6 +188,43 @@
         "value": 1,
         "required": true,
         "description": "Positive business net profit (alternate proxy for positive total income)"
+      },
+  
+      {
+        "strategy_id": "s_corp_conversion",
+        "rule_group": "g1",
+        "field": "business.has_business",
+        "op": "eq",
+        "value": true,
+        "required": true,
+        "description": "Must have a business"
+      },
+      {
+        "strategy_id": "s_corp_conversion",
+        "rule_group": "g1",
+        "field": "business.entity_type",
+        "op": "in",
+        "value": ["SOLE_PROP", "PARTNERSHIP", "LLC"],
+        "required": true,
+        "description": "Entity type must be SOLE_PROP, PARTNERSHIP, or LLC (not already S_CORP)"
+      },
+      {
+        "strategy_id": "s_corp_conversion",
+        "rule_group": "g1",
+        "field": "business.net_profit",
+        "op": "gte",
+        "value": 100000,
+        "required": true,
+        "description": "Business net profit must be at least $100,000"
+      },
+      {
+        "strategy_id": "s_corp_conversion",
+        "rule_group": "g1",
+        "field": "business.entity_type",
+        "op": "neq",
+        "value": "S_CORP",
+        "required": true,
+        "description": "Entity type must NOT be S_CORP (already converted)"
       }
     ]
   }

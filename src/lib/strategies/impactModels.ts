@@ -614,12 +614,94 @@ export const filmCreditsModel: ImpactModel = {
   },
 };
 
+/* --------------------------- model: s_corp_conversion --------------------------- */
+
+/**
+ * S-Corp conversion reduces payroll taxes (self-employment tax) by paying reasonable salary
+ * and taking the rest as distributions (not subject to SE tax).
+ * 
+ * This model calculates tax liability delta (payroll tax savings), not taxable income delta.
+ */
+export const sCorpConversionModel: ImpactModel = {
+  kind: "credit_range",
+  estimate: (ctx: ImpactModelContext) => {
+    const netProfit = ctx.intake.business?.net_profit ?? 0;
+    if (netProfit < 100000) {
+      // Below minimum threshold
+      return {
+        model: "credit_range",
+        needsConfirmation: true,
+        taxLiabilityDelta: makeRange3(0, 0, 0),
+        assumptions: [
+          { id: "BELOW_MIN_PROFIT_THRESHOLD", category: "CAP", value: 100000 },
+        ],
+        inputsToTighten: [],
+        flags: [],
+      };
+    }
+
+    // Reasonable salary = min(33% of net_profit, $120,000)
+    const reasonableSalary = Math.min(netProfit * 0.33, 120000);
+    
+    // Avoided income = income above salary, capped at $176,100 (2025 SE tax wage base)
+    const avoidedIncome = Math.min(netProfit - reasonableSalary, 176100);
+    
+    // Tax savings = avoided income * 15.3% (self-employment tax rate)
+    const taxSavings = avoidedIncome * 0.153;
+    
+    // Conservative range: 80% to 120% of base
+    const taxLiabilityDelta = makeRange3(
+      -taxSavings * 1.2, // More conservative (larger negative = more savings)
+      -taxSavings,
+      -taxSavings * 0.8, // Less conservative (smaller negative = less savings)
+    );
+
+    const assumptions: ImpactAssumption[] = [
+      { id: "REASONABLE_SALARY", category: "DEFAULT", value: reasonableSalary },
+      { id: "AVOIDED_INCOME", category: "DEFAULT", value: avoidedIncome },
+      { id: "SE_TAX_RATE", category: "DEFAULT", value: 0.153 },
+      { id: "SE_WAGE_BASE_2025", category: "CAP", value: 176100 },
+      { id: "REQUIRES_PAYROLL_SETUP", category: "DATA_GAP", value: true },
+      { id: "REQUIRES_REASONABLE_SALARY", category: "DATA_GAP", value: true },
+      { id: "CONSERVATIVE_RANGE", category: "CONSERVATISM", value: true },
+    ];
+
+    const flags: ImpactFlag[] = [];
+
+    // Clamp to baseline total tax
+    const clampedDelta = clampTaxLiabilityDeltaToBaseline(ctx.baseline.totalTax, taxLiabilityDelta);
+    if (
+      clampedDelta.low !== taxLiabilityDelta.low ||
+      clampedDelta.base !== taxLiabilityDelta.base ||
+      clampedDelta.high !== taxLiabilityDelta.high
+    ) {
+      flags.push("CAPPED_BY_TAX_LIABILITY");
+      assumptions.push({
+        id: "CAPPED_BY_BASELINE_TOTAL_TAX",
+        category: "CAP",
+        value: ctx.baseline.totalTax,
+      });
+    }
+
+    const estimate: Omit<StrategyImpactEstimate, "strategyId" | "status"> = {
+      model: "credit_range",
+      needsConfirmation: true,
+      taxLiabilityDelta: clampedDelta,
+      assumptions,
+      inputsToTighten: [],
+      flags,
+    };
+
+    return withAlreadyInUseFlag(estimate, ctx.alreadyInUse);
+  },
+};
+
 /* --------------------------- registry + resolver --------------------------- */
 /**
  * IMPORTANT:
  * Your contract StrategyIds are snake_case:
  * - augusta_loophole, medical_reimbursement, hiring_children, cash_balance_plan,
- *   k401, leveraged_charitable, short_term_rental, rtu_program, film_credits
+ *   k401, leveraged_charitable, short_term_rental, rtu_program, film_credits, s_corp_conversion
  */
 const REGISTRY: Readonly<Record<StrategyId, ImpactModel>> = {
   augusta_loophole: augustaModel,
@@ -631,6 +713,7 @@ const REGISTRY: Readonly<Record<StrategyId, ImpactModel>> = {
   short_term_rental: shortTermRentalModel,
   rtu_program: rtuProgramModel,
   film_credits: filmCreditsModel,
+  s_corp_conversion: sCorpConversionModel,
 } as const;
 
 export function getImpactModel(strategyId: StrategyId): ImpactModel {

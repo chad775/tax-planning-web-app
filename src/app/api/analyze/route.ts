@@ -132,6 +132,7 @@ const STRATEGY_TIER_MAP: Readonly<Record<string, Tier>> = {
   rtu_program: 3,
   leveraged_charitable: 3,
   film_credits: 3,
+  s_corp_conversion: 3,
 } as const;
 
 function getTier(strategyId: string): Tier {

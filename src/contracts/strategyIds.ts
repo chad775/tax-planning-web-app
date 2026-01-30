@@ -24,6 +24,7 @@ export const STRATEGY_IDS = [
   "short_term_rental",
   "rtu_program",
   "film_credits",
+  "s_corp_conversion",
 ] as const;
 
 export type StrategyId = typeof STRATEGY_IDS[number];

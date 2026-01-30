@@ -12,6 +12,7 @@
 import React from "react";
 import { STRATEGY_CATALOG } from "@/lib/strategies/strategyCatalog";
 import type { StrategyId } from "@/contracts/strategyIds";
+import type { TaxBreakdown } from "./TaxBreakdownTable";
 
 type StrategyImpact = {
   strategyId: string;
@@ -25,11 +26,26 @@ type StrategyImpact = {
   assumptions: Array<{ id: string; category: string; value: unknown }>;
 };
 
+type WhatIfScenarioData = {
+  strategyId: string;
+  tier: 3;
+  taxableIncomeDeltaBase: number;
+  totals: {
+    federalTax: number;
+    stateTax: number;
+    totalTax: number;
+  };
+  breakdown: TaxBreakdown;
+};
+
 type StrategyBucketProps = {
   strategies: StrategyImpact[];
   tier: 1 | 2 | 3;
   title: string;
   description?: string;
+  whatIfMap?: Map<string, WhatIfScenarioData>;
+  baselineBreakdown?: TaxBreakdown | null;
+  strategyExplanations?: Map<string, { what_it_is: string; why_it_applies_or_not: string }>;
 };
 
 /* ------------------------------------------------------------------ */
@@ -85,6 +101,10 @@ function deriveEstimatedCost(
     case "short_term_rental":
       // Cost is NOT just purchase price; treat purchase price as "capital required"
       return null;
+    case "s_corp_conversion":
+      // Setup/admin cost placeholder: typically $1-3k
+      // Return null to show "Varies" in UI, but we could add an assumption if needed
+      return null;
     default:
       return null;
   }
@@ -106,7 +126,15 @@ function deriveRecommendedIncomeMin(
   return getAssumptionNumber(assumptions, "RECOMMENDED_INCOME_MIN");
 }
 
-export function StrategyBucket({ strategies, tier, title, description }: StrategyBucketProps) {
+export function StrategyBucket({
+  strategies,
+  tier,
+  title,
+  description,
+  whatIfMap,
+  baselineBreakdown,
+  strategyExplanations,
+}: StrategyBucketProps) {
   const formatIncomeReduction = (range: { low: number; base: number; high: number } | null): string => {
     if (range === null) return "—";
     const base = Math.abs(range.base);
@@ -247,7 +275,10 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
               ? STRATEGY_CATALOG[strategy.strategyId as StrategyId]
               : undefined;
           const strategyName = catalogEntry?.uiLabel ?? strategy.strategyId;
-          const strategySummary = catalogEntry?.uiSummary;
+          
+          // Prefer narrative explanation, fallback to catalog summary
+          const narrativeExplanation = strategyExplanations?.get(strategy.strategyId);
+          const strategySummary = narrativeExplanation?.what_it_is ?? catalogEntry?.uiSummary;
 
           const friendlyStatus = getFriendlyStatus(strategy.status);
           const statusColor = getStatusColor(strategy.status);
@@ -265,27 +296,46 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
           const recommendedIncomeMin =
             tier === 3 ? deriveRecommendedIncomeMin(strategy.assumptions) : null;
 
-          // Calculate key metrics for Tier 3
-          const deductionAmount =
-            tier === 3 && strategy.taxableIncomeDelta !== null
-              ? Math.abs(strategy.taxableIncomeDelta.base)
-              : null;
-          const taxSavings =
-            tier === 3 && strategy.taxLiabilityDelta !== null
-              ? Math.abs(strategy.taxLiabilityDelta.base)
-              : null;
+          // Calculate key metrics for Tier 3 using what-if data
+          let deductionAmount: number | null = null;
+          let taxSavings: number | null = null;
+          let hasWhatIfData = false;
+
+          if (tier === 3) {
+            const whatIf = whatIfMap?.get(strategy.strategyId);
+            if (whatIf && baselineBreakdown) {
+              hasWhatIfData = true;
+              deductionAmount = Math.abs(whatIf.taxableIncomeDeltaBase);
+              taxSavings = Math.max(0, baselineBreakdown.totals.totalTax - whatIf.totals.totalTax);
+            } else if (strategy.taxableIncomeDelta !== null) {
+              // Fallback to strategy delta if what-if not available
+              deductionAmount = Math.abs(strategy.taxableIncomeDelta.base);
+              taxSavings = strategy.taxLiabilityDelta !== null ? Math.abs(strategy.taxLiabilityDelta.base) : null;
+            }
+          }
+
           const netSavings = tier === 3 && estimatedCost !== null && taxSavings !== null ? taxSavings - estimatedCost : null;
 
-          // Build friendly notes
-          const friendlyNotes: string[] = [];
+          // Build reason why not applied (clear, plain English)
+          const whyNotApplied: string[] = [];
           if (strategy.needsConfirmation) {
-            friendlyNotes.push("Needs a quick fact check");
+            whyNotApplied.push("Needs a quick fact check");
           }
           if (strategy.flags.includes("CAPPED_BY_TAXABLE_INCOME")) {
-            friendlyNotes.push("Limited by your current taxable income");
+            whyNotApplied.push("Limited by your current taxable income");
           }
           if (strategy.flags.includes("ALREADY_IN_USE")) {
-            friendlyNotes.push("Already in use (additional savings may be $0)");
+            whyNotApplied.push("Already in use (additional savings may be $0)");
+          }
+          if (strategy.status === "NOT_ELIGIBLE") {
+            const narrativeReason = narrativeExplanation?.why_it_applies_or_not;
+            if (narrativeReason) {
+              whyNotApplied.push(narrativeReason);
+            } else {
+              whyNotApplied.push("Not eligible based on your current situation");
+            }
+          } else if (strategy.status === "POTENTIAL") {
+            whyNotApplied.push("May be eligible with additional information");
           }
 
           return (
@@ -337,17 +387,33 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
               {/* Tier 3: Key numbers section */}
               {tier === 3 && (
                 <div style={numbersSectionStyle}>
+                  {strategy.strategyId !== "s_corp_conversion" && (
+                    <div style={numberItemStyle}>
+                      <div style={numberLabelStyle}>Estimated deduction</div>
+                      <div style={numberValueStyle}>
+                        {hasWhatIfData ? formatMoneyOrDash(deductionAmount) : "Estimate requires review"}
+                      </div>
+                    </div>
+                  )}
                   <div style={numberItemStyle}>
-                    <div style={numberLabelStyle}>Estimated deduction</div>
-                    <div style={numberValueStyle}>{formatMoneyOrDash(deductionAmount)}</div>
+                    <div style={numberLabelStyle}>
+                      {strategy.strategyId === "s_corp_conversion"
+                        ? "Estimated payroll tax savings"
+                        : "Estimated tax savings"}
+                    </div>
+                    <div style={{ ...numberValueStyle, color: "#117a2a" }}>
+                      {hasWhatIfData ? formatMoneyOrDash(taxSavings) : "Estimate requires review"}
+                    </div>
                   </div>
                   <div style={numberItemStyle}>
-                    <div style={numberLabelStyle}>Estimated tax savings</div>
-                    <div style={{ ...numberValueStyle, color: "#117a2a" }}>{formatMoneyOrDash(taxSavings)}</div>
-                  </div>
-                  <div style={numberItemStyle}>
-                    <div style={numberLabelStyle}>Estimated cost</div>
-                    <div style={numberValueStyle}>{formatMoneyOrDash(estimatedCost)}</div>
+                    <div style={numberLabelStyle}>Cost</div>
+                    <div style={numberValueStyle}>
+                      {estimatedCost !== null
+                        ? formatMoneyOrDash(estimatedCost)
+                        : strategy.strategyId === "s_corp_conversion"
+                          ? "Typically $1–3k"
+                          : "Varies"}
+                    </div>
                   </div>
                   {capitalRequired !== null && (
                     <div style={numberItemStyle}>
@@ -357,7 +423,7 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
                   )}
                   {netSavings !== null && (
                     <div style={numberItemStyle}>
-                      <div style={numberLabelStyle}>Estimated net savings</div>
+                      <div style={numberLabelStyle}>Net tax benefit after cost</div>
                       <div style={{ ...numberValueStyle, color: netSavings > 0 ? "#117a2a" : "#b00020" }}>
                         {formatMoney(netSavings)}
                       </div>
@@ -374,11 +440,16 @@ export function StrategyBucket({ strategies, tier, title, description }: Strateg
                 </div>
               )}
 
-              {/* Friendly notes */}
-              {friendlyNotes.length > 0 && (
-                <div style={friendlyNoteStyle}>
-                  {friendlyNotes.map((note, idx) => (
-                    <div key={idx}>• {note}</div>
+              {/* Why this needs review */}
+              {whyNotApplied.length > 0 && (
+                <div style={{ marginTop: 12, padding: 12, background: "#fff9e6", borderRadius: 8, border: "1px solid #ffd700" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#946200", marginBottom: 6 }}>
+                    Why this needs review
+                  </div>
+                  {whyNotApplied.map((reason, idx) => (
+                    <div key={idx} style={{ fontSize: 12, color: "#666", lineHeight: 1.5 }}>
+                      • {reason}
+                    </div>
                   ))}
                 </div>
               )}

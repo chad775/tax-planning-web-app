@@ -106,4 +106,13 @@ export const STRATEGY_CATALOG: Record<StrategyId, StrategyMeta> = {
     uiSummary: "Invest in film production to access state tax credits that can reduce your overall tax liability.",
     displayOrder: 100,
   },
+  s_corp_conversion: {
+    id: "s_corp_conversion",
+    tier: 3,
+    autoApplyWhenEligible: false,
+    combineMode: "solo",
+    uiLabel: "S-Corp Conversion",
+    uiSummary: "Convert your business to an S-Corporation to reduce self-employment taxes by paying yourself a reasonable salary and taking the rest as distributions.",
+    displayOrder: 85,
+  },
 };

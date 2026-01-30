@@ -5,7 +5,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TaxBreakdownTable, type TaxBreakdown } from "./components/TaxBreakdownTable";
 import { StrategyBucket } from "./components/StrategyBucket";
-import { WhatIfScenario } from "./components/WhatIfScenario";
 import { STRATEGY_CATALOG } from "@/lib/strategies/strategyCatalog";
 import type { StrategyId } from "@/contracts/strategyIds";
 
@@ -46,10 +45,14 @@ type ResultsViewModel = {
   filingStatus: string | null;
   state: string | null;
   hasBusiness: boolean;
+  businessType: string | null;
+  childrenCount: number | null;
   executiveSummary: string | null;
   baselineBreakdown: TaxBreakdown | null;
   revisedBreakdown: TaxBreakdown | null;
   strategyBuckets: StrategyBuckets | null;
+  strategyExplanations: Map<string, { what_it_is: string; why_it_applies_or_not: string }>;
+  whatIfMap: Map<string, WhatIfScenarioData>;
 };
 
 /* ------------------------------------------------------------------ */
@@ -128,6 +131,10 @@ export default function ResultsPage() {
           <Pill label="Filing Status" value={vm.filingStatus ?? "—"} />
           <Pill label="State" value={vm.state ?? "—"} />
           <Pill label="Business" value={vm.hasBusiness ? "Yes" : "No"} />
+          {vm.businessType && <Pill label="Business Type" value={vm.businessType} />}
+          {vm.childrenCount !== null && (
+            <Pill label="Children" value={vm.childrenCount === 0 ? "None" : String(vm.childrenCount)} />
+          )}
         </div>
 
         {vm.executiveSummary && (
@@ -203,42 +210,18 @@ export default function ResultsPage() {
               {/* Tier 3: Bigger opportunities */}
               <div style={{ marginTop: 24 }}>
                 <StrategyBucket
-                  strategies={buckets.opportunities}
+                  strategies={buckets.opportunities.filter((s) => {
+                    // Defensive: exclude any strategy already in applied bucket
+                    return !buckets.applied.some((a) => a.strategyId === s.strategyId);
+                  })}
                   tier={3}
                   title="Bigger opportunities to explore"
-                  description="These are shown as 'what-if' opportunities. Each strategy is calculated independently (not combined with other Tier 3 strategies)."
+                  description="Each strategy is calculated independently (not combined with other Tier 3 strategies)."
+                  whatIfMap={vm.whatIfMap}
+                  baselineBreakdown={vm.baselineBreakdown}
+                  strategyExplanations={vm.strategyExplanations}
                 />
               </div>
-
-              {/* Tier 3 What-If Scenarios */}
-              {buckets.opportunity_what_if.length > 0 && (
-                <div style={{ marginTop: 24 }}>
-                  <h3 style={{ ...h3Style, marginBottom: 12 }}>What-If Scenarios (Tier 3)</h3>
-                  <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
-                    Below shows the tax breakdown if each Tier 3 strategy were applied individually on top of Tier 1-2
-                    strategies.
-                  </p>
-                  {buckets.opportunity_what_if.map((whatIf) => {
-                    // Try to find assumptions from the matching opportunity strategy
-                    const matchingStrategy = buckets.opportunities.find(
-                      (s) => s.strategyId === whatIf.strategyId,
-                    );
-                    const assumptions = matchingStrategy?.assumptions;
-
-                    return (
-                      <WhatIfScenario
-                        key={whatIf.strategyId}
-                        strategyId={whatIf.strategyId}
-                        breakdown={whatIf.breakdown}
-                        taxableIncomeDeltaBase={whatIf.taxableIncomeDeltaBase}
-                        baselineBreakdown={vm.baselineBreakdown!}
-                        revisedBreakdown={vm.revisedBreakdown!}
-                        {...(assumptions ? { assumptions } : {})}
-                      />
-                    );
-                  })}
-                </div>
-              )}
             </section>
           );
         })()}
@@ -287,9 +270,27 @@ function buildViewModel(raw: JsonRecord | null): ResultsViewModel | null {
   const filingStatus = asString(personal?.["filing_status"]);
   const state = asString(personal?.["state"]);
   const hasBusiness = Boolean(business?.["has_business"]);
+  const businessType = humanizeBusinessType(asString(business?.["entity_type"]));
+  const childrenCount = asNumber(personal?.["children_0_17"]);
 
   const narrative = asRecord(raw["narrative"]);
   const executiveSummary = asString(narrative?.["executive_summary"]);
+
+  // Extract strategy explanations from narrative
+  const strategyExplanations = new Map<string, { what_it_is: string; why_it_applies_or_not: string }>();
+  const explanationsArray = asArray(narrative?.["strategy_explanations"]);
+  if (explanationsArray) {
+    for (const item of explanationsArray) {
+      const exp = asRecord(item);
+      if (!exp) continue;
+      const strategyId = asString(exp["strategy_id"]);
+      const whatItIs = asString(exp["what_it_is"]);
+      const whyItApplies = asString(exp["why_it_applies_or_not"]);
+      if (strategyId && whatItIs && whyItApplies) {
+        strategyExplanations.set(strategyId, { what_it_is: whatItIs, why_it_applies_or_not: whyItApplies });
+      }
+    }
+  }
 
   // Extract breakdowns
   const baselineBreakdown = normalizeBreakdown(asRecord(raw["baseline_breakdown"]));
@@ -308,15 +309,27 @@ function buildViewModel(raw: JsonRecord | null): ResultsViewModel | null {
       }
     : null;
 
+  // Build what-if map by strategyId
+  const whatIfMap = new Map<string, WhatIfScenarioData>();
+  if (strategyBuckets) {
+    for (const whatIf of strategyBuckets.opportunity_what_if) {
+      whatIfMap.set(whatIf.strategyId, whatIf);
+    }
+  }
+
   return {
     requestId,
     filingStatus,
     state,
     hasBusiness,
+    businessType,
+    childrenCount,
     executiveSummary,
     baselineBreakdown,
     revisedBreakdown,
     strategyBuckets,
+    strategyExplanations,
+    whatIfMap,
   };
 }
 
@@ -539,6 +552,18 @@ function asStringArray(v: unknown): string[] | null {
 
 function asBoolean(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;
+}
+
+function humanizeBusinessType(entityType: string | null): string | null {
+  if (!entityType) return null;
+  const map: Record<string, string> = {
+    S_CORP: "S Corporation",
+    C_CORP: "C Corporation",
+    SOLE_PROP: "Sole Proprietorship",
+    PARTNERSHIP: "Partnership",
+    LLC: "LLC",
+  };
+  return map[entityType] ?? entityType;
 }
 
 async function copyToClipboard(text: string) {
