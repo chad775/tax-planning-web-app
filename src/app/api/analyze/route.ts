@@ -547,7 +547,7 @@ export async function POST(req: Request) {
             assumptions: Array.isArray(i?.assumptions) ? i.assumptions : [],
           };
         })
-        .filter((x: any) => x.tier === 1 || x.tier === 2),
+        .filter((x: any) => x.flags.includes("APPLIED")),
 
       opportunities: impactsList
         .map((i: any) => {

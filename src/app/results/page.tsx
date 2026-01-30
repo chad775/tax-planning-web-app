@@ -141,16 +141,38 @@ export default function ResultsPage() {
       </section>
 
       {/* Baseline vs Revised Tax Breakdown */}
-      {vm.baselineBreakdown && vm.revisedBreakdown && (
-        <section style={cardStyle}>
-          <h2 style={h2Style}>Tax Breakdown: Baseline vs After Strategies</h2>
-          <TaxBreakdownTable
-            baseline={vm.baselineBreakdown}
-            revised={vm.revisedBreakdown}
-            appliedStrategies={buildAppliedStrategies(vm.strategyBuckets)}
-          />
-        </section>
-      )}
+      {vm.baselineBreakdown && vm.revisedBreakdown && (() => {
+        const appliedStrategies = buildAppliedStrategies(vm.strategyBuckets);
+        
+        // Dev-only invariant check: sum of applied AGI reductions should equal baseline AGI - revised AGI
+        if (process.env.NODE_ENV !== "production" && vm.strategyBuckets) {
+          const sumAppliedAgiDelta = appliedStrategies.reduce((sum, s) => sum + s.agiDeltaBase, 0);
+          const actualAgiDelta = vm.baselineBreakdown.agi - vm.revisedBreakdown.agi;
+          const diff = Math.abs(sumAppliedAgiDelta - actualAgiDelta);
+          
+          if (diff > 1) { // Allow 1 dollar rounding tolerance
+            console.warn(
+              `[AGI Reduction Mismatch] Sum of applied strategies (${sumAppliedAgiDelta}) does not match actual AGI delta (${actualAgiDelta}). Difference: ${diff}`,
+              {
+                appliedStrategies,
+                baselineAgi: vm.baselineBreakdown.agi,
+                revisedAgi: vm.revisedBreakdown.agi,
+              }
+            );
+          }
+        }
+        
+        return (
+          <section style={cardStyle}>
+            <h2 style={h2Style}>Tax Breakdown: Baseline vs After Strategies</h2>
+            <TaxBreakdownTable
+              baseline={vm.baselineBreakdown}
+              revised={vm.revisedBreakdown}
+              appliedStrategies={appliedStrategies}
+            />
+          </section>
+        );
+      })()}
 
       {/* Strategy Buckets */}
       {vm.strategyBuckets &&
@@ -329,9 +351,9 @@ function buildAppliedStrategies(buckets: StrategyBuckets | null): Array<{
 }> {
   if (!buckets) return [];
 
-  const applied = buckets.applied.filter((s) => {
-    // Only tier 1 or 2
-    if (s.tier !== 1 && s.tier !== 2) return false;
+  // Include all strategies with APPLIED flag from all tiers
+  const allStrategies = [...buckets.applied, ...buckets.opportunities];
+  const applied = allStrategies.filter((s) => {
     // Must have APPLIED flag
     if (!s.flags.includes("APPLIED")) return false;
     // Must have taxableIncomeDelta

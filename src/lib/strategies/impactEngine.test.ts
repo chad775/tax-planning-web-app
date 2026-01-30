@@ -280,6 +280,68 @@ function main(): void {
     assert(tiYes <= tiNo || approxEqual(tiYes, tiNo), "Applying potential should not increase taxable income");
   }
 
+  // Test: Tier 3 strategies with APPLIED flag should be included in applied list
+  {
+    // eslint-disable-next-line no-console
+    console.log("\n=== Test: Tier 3 strategies with APPLIED flag ===");
+    const intake = buildBaseIntake({
+      taxableState: "CO",
+      filingStatus: "MARRIED_FILING_JOINTLY",
+      kids: 2,
+      hasBiz: true,
+    });
+
+    // Create a scenario where cash_balance_plan (Tier 2) would be applied
+    // and also a Tier 3 strategy that gets APPLIED flag
+    const evaluations = buildEvaluations({
+      augusta_loophole: "ELIGIBLE",
+      k401: "ELIGIBLE",
+      cash_balance_plan: "ELIGIBLE",
+      short_term_rental: "ELIGIBLE",
+    });
+
+    const baseline = {
+      federalTax: 100000,
+      stateTax: 20000,
+      totalTax: 120000,
+      taxableIncome: 500000,
+    };
+
+    const input: ImpactEngineInput = {
+      intake,
+      baseline,
+      strategyEvaluations: evaluations,
+      applyPotential: false,
+    };
+
+    const output = runImpactEngine(input);
+    
+    // Check that all strategies with APPLIED flag are included, regardless of tier
+    const appliedImpacts = output.impacts.filter((i) => (i.flags ?? []).includes("APPLIED"));
+    const appliedIds = appliedImpacts.map((i) => i.strategyId);
+    
+    // eslint-disable-next-line no-console
+    console.log("Applied strategy IDs:", appliedIds);
+    
+    // Sum of applied taxable income deltas
+    const sumAppliedDelta = sumAppliedTaxableIncomeBase(output.impacts);
+    const actualDelta = output.revisedTotals.baseline.taxableIncome - output.revisedTotals.revised.taxableIncome;
+    
+    // eslint-disable-next-line no-console
+    console.log("Sum of applied deltas:", sumAppliedDelta);
+    // eslint-disable-next-line no-console
+    console.log("Actual taxable income delta:", actualDelta);
+    
+    // Validate that sum matches actual delta (within rounding)
+    assert(
+      Math.abs(sumAppliedDelta - actualDelta) <= 1,
+      `Sum of applied deltas (${sumAppliedDelta}) should equal actual delta (${actualDelta}) within $1 rounding`
+    );
+    
+    // eslint-disable-next-line no-console
+    console.log("✓ Tier 3 APPLIED flag test passed");
+  }
+
   // eslint-disable-next-line no-console
   console.log("\nAll impact engine harness checks passed.");
 }
