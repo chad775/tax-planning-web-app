@@ -115,18 +115,28 @@ export function computePayrollTaxes2025(
   // Half of self-employment tax is deductible (above-the-line adjustment)
   const halfSelfEmploymentTaxDeduction = selfEmploymentTax > 0 ? selfEmploymentTax * 0.5 : undefined;
 
+  const components: PayrollTaxResult["components"] = {};
+  if (selfEmploymentTax > 0) {
+    components.selfEmploymentTax = Math.round(selfEmploymentTax * 100) / 100;
+  }
+  if (ficaTaxOnWages > 0) {
+    components.ficaTaxOnWages = Math.round(ficaTaxOnWages * 100) / 100;
+  }
+  if (additionalMedicareTax > 0) {
+    components.additionalMedicareTax = Math.round(additionalMedicareTax * 100) / 100;
+  }
+  if (ssWageBaseUsed > 0) {
+    components.ssWageBaseUsed = Math.round(ssWageBaseUsed * 100) / 100;
+  }
+
+  const adjustments: PayrollTaxResult["adjustments"] = {};
+  if (halfSelfEmploymentTaxDeduction) {
+    adjustments.halfSelfEmploymentTaxDeduction = Math.round(halfSelfEmploymentTaxDeduction * 100) / 100;
+  }
+
   return {
     payrollTaxTotal: Math.round(payrollTaxTotal * 100) / 100, // Round to cents
-    components: {
-      selfEmploymentTax: selfEmploymentTax > 0 ? Math.round(selfEmploymentTax * 100) / 100 : undefined,
-      ficaTaxOnWages: ficaTaxOnWages > 0 ? Math.round(ficaTaxOnWages * 100) / 100 : undefined,
-      additionalMedicareTax: additionalMedicareTax > 0 ? Math.round(additionalMedicareTax * 100) / 100 : undefined,
-      ssWageBaseUsed: ssWageBaseUsed > 0 ? Math.round(ssWageBaseUsed * 100) / 100 : undefined,
-    },
-    adjustments: {
-      halfSelfEmploymentTaxDeduction: halfSelfEmploymentTaxDeduction
-        ? Math.round(halfSelfEmploymentTaxDeduction * 100) / 100
-        : undefined,
-    },
+    components,
+    adjustments,
   };
 }
