@@ -472,6 +472,7 @@ export async function POST(req: Request) {
       const baselineTotals = {
         federalTax: (baseline as any).federalTax ?? 0,
         stateTax: (baseline as any).stateTax ?? 0,
+        payrollTax: (baseline as any).payrollTax ?? 0,
         totalTax: (baseline as any).totalTax ?? 0,
         taxableIncome: (baseline as any).taxableIncome ?? 0,
       };
