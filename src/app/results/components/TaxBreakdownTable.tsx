@@ -51,7 +51,8 @@ export type TaxBreakdown = {
 type AppliedStrategy = {
   strategyId: string;
   label: string;
-  agiDeltaBase: number; // negative or 0
+  agiDeltaBase: number; // negative or 0 (deduction amount)
+  taxSavings: number; // positive number (tax savings)
 };
 
 type TaxBreakdownTableProps = {
@@ -99,8 +100,8 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
   const savings = baseline.totals.totalTax - revised.totals.totalTax;
   const isSavings = savings > 0;
 
-  // Calculate total AGI reduction
-  const totalAgiReduction = appliedStrategies.reduce((sum, s) => sum + s.agiDeltaBase, 0);
+  // Calculate total tax savings (sum of tax savings column)
+  const totalTaxSavings = appliedStrategies.reduce((sum, s) => sum + s.taxSavings, 0);
 
   return (
     <div>
@@ -219,30 +220,58 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
           {/* Applied Strategies List */}
           {appliedStrategies.length > 0 && (
             <div style={{ marginTop: spacing.xl, paddingTop: spacing.lg, borderTop: `1px solid ${colors.border}` }}>
-              <div style={{ fontSize: typography.fontSize.xs, fontWeight: typography.fontWeight.bold, color: colors.textTertiary, marginBottom: spacing.sm }}>
-                Applied Strategies (AGI Reduction)
+              <div style={{ fontSize: typography.fontSize.xs, fontWeight: typography.fontWeight.bold, color: colors.textTertiary, marginBottom: spacing.md }}>
+                Applied Strategies
               </div>
+              
+              {/* Table Header */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "2fr 1fr 1fr",
+                  gap: spacing.sm,
+                  fontSize: typography.fontSize.xs,
+                  fontWeight: typography.fontWeight.semibold,
+                  color: colors.textSecondary,
+                  paddingBottom: spacing.xs,
+                  borderBottom: `1px solid ${colors.border}`,
+                  marginBottom: spacing.xs,
+                }}
+              >
+                <div>Strategy</div>
+                <div style={{ textAlign: "right" as const }}>Deduction</div>
+                <div style={{ textAlign: "right" as const }}>Tax Savings</div>
+              </div>
+              
+              {/* Table Rows */}
               <div style={{ display: "grid", gap: spacing.xs }}>
                 {appliedStrategies.map((strategy) => (
                   <div
                     key={strategy.strategyId}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
+                      display: "grid",
+                      gridTemplateColumns: "2fr 1fr 1fr",
+                      gap: spacing.sm,
                       fontSize: typography.fontSize.xs,
                       padding: `${spacing.xs} 0`,
                     }}
                   >
                     <span style={{ color: colors.textSecondary }}>{strategy.label}</span>
                     <span style={{ fontWeight: typography.fontWeight.semibold, color: colors.textPrimary, textAlign: "right" as const }}>
-                      {formatMoney(strategy.agiDeltaBase)}
+                      {strategy.agiDeltaBase !== 0 ? formatMoney(strategy.agiDeltaBase) : "—"}
+                    </span>
+                    <span style={{ fontWeight: typography.fontWeight.semibold, color: colors.savings, textAlign: "right" as const }}>
+                      {formatMoney(Math.abs(strategy.taxSavings))}
                     </span>
                   </div>
                 ))}
+                
+                {/* Total Row */}
                 <div
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
+                    display: "grid",
+                    gridTemplateColumns: "2fr 1fr 1fr",
+                    gap: spacing.sm,
                     fontSize: typography.fontSize.xs,
                     fontWeight: typography.fontWeight.bold,
                     paddingTop: spacing.sm,
@@ -251,8 +280,9 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
                     color: colors.textPrimary,
                   }}
                 >
-                  <span>Total estimated AGI reduction (base):</span>
-                  <span style={{ textAlign: "right" as const }}>{formatMoney(totalAgiReduction)}</span>
+                  <span>Total tax savings:</span>
+                  <span style={{ textAlign: "right" as const }}></span>
+                  <span style={{ textAlign: "right" as const, color: colors.savings }}>{formatMoney(Math.abs(totalTaxSavings))}</span>
                 </div>
               </div>
             </div>

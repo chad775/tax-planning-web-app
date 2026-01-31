@@ -19,6 +19,7 @@ type StrategyImpact = {
   needsConfirmation: boolean | null;
   taxableIncomeDelta: { low: number; base: number; high: number } | null;
   taxLiabilityDelta: { low: number; base: number; high: number } | null;
+  payrollTaxDelta: { low: number; base: number; high: number } | null;
   model: string | null;
   assumptions: Array<{ id: string; category: string; value: unknown }>;
 };
@@ -387,6 +388,7 @@ function buildAppliedStrategies(buckets: StrategyBuckets | null): Array<{
   strategyId: string;
   label: string;
   agiDeltaBase: number;
+  taxSavings: number;
 }> {
   if (!buckets) return [];
 
@@ -395,20 +397,48 @@ function buildAppliedStrategies(buckets: StrategyBuckets | null): Array<{
   const applied = allStrategies.filter((s) => {
     // Must have APPLIED flag
     if (!s.flags.includes("APPLIED")) return false;
-    // Must have taxableIncomeDelta
+    // Must have either taxableIncomeDelta, taxLiabilityDelta, or payrollTaxDelta
+    // Special case: s_corp_conversion may only have payrollTaxDelta
+    if (s.strategyId === "s_corp_conversion") {
+      return true; // Include s_corp_conversion even without taxableIncomeDelta
+    }
+    // For other strategies, require taxableIncomeDelta
     if (s.taxableIncomeDelta === null) return false;
     return true;
   });
 
   // Defensive deduplication: ensure each strategyId appears only once
   // If duplicates exist, keep the one from the applied bucket (prefer applied over opportunities)
-  const dedupeMap = new Map<string, { strategyId: string; label: string; agiDeltaBase: number }>();
+  const dedupeMap = new Map<string, { strategyId: string; label: string; agiDeltaBase: number; taxSavings: number }>();
   
   for (const s of applied) {
     const catalogEntry =
       s.strategyId in STRATEGY_CATALOG ? STRATEGY_CATALOG[s.strategyId as StrategyId] : undefined;
     const label = catalogEntry?.uiLabel ?? s.strategyId;
-    const agiDeltaBase = s.taxableIncomeDelta!.base; // Already checked for null above
+    
+    // AGI delta (deduction amount) - use 0 for s_corp_conversion if no taxableIncomeDelta
+    const agiDeltaBase = s.taxableIncomeDelta?.base ?? 0;
+    
+    // Calculate tax savings:
+    // - For s_corp_conversion: use payrollTaxDelta if available, otherwise taxLiabilityDelta
+    // - For others: use taxLiabilityDelta if available, otherwise estimate from taxableIncomeDelta
+    let taxSavings = 0;
+    if (s.strategyId === "s_corp_conversion") {
+      // s_corp_conversion primarily saves on payroll tax
+      if (s.payrollTaxDelta) {
+        taxSavings = Math.abs(s.payrollTaxDelta.base);
+      } else if (s.taxLiabilityDelta) {
+        // Fallback to taxLiabilityDelta if payrollTaxDelta not available
+        taxSavings = Math.abs(s.taxLiabilityDelta.base);
+      }
+    } else if (s.taxLiabilityDelta) {
+      // Use taxLiabilityDelta if available (negative value = savings)
+      taxSavings = Math.abs(s.taxLiabilityDelta.base);
+    } else if (s.taxableIncomeDelta) {
+      // Fallback: estimate tax savings as ~25% of deduction (rough estimate)
+      // This is a conservative estimate for income tax savings
+      taxSavings = Math.abs(s.taxableIncomeDelta.base) * 0.25;
+    }
 
     // If already exists, prefer the one from applied bucket (check if current is from applied)
     const isFromApplied = buckets.applied.some((a) => a.strategyId === s.strategyId);
@@ -420,11 +450,17 @@ function buildAppliedStrategies(buckets: StrategyBuckets | null): Array<{
         strategyId: s.strategyId,
         label,
         agiDeltaBase,
+        taxSavings,
       });
     }
   }
 
-  return Array.from(dedupeMap.values());
+  // Sort: regular strategies first, then s_corp_conversion at the end
+  const result = Array.from(dedupeMap.values());
+  const regularStrategies = result.filter((s) => s.strategyId !== "s_corp_conversion");
+  const sCorpStrategy = result.find((s) => s.strategyId === "s_corp_conversion");
+  
+  return sCorpStrategy ? [...regularStrategies, sCorpStrategy] : regularStrategies;
 }
 
 function normalizeBreakdown(v: JsonRecord | null): TaxBreakdown | null {
@@ -499,6 +535,7 @@ function normalizeStrategyImpacts(arr: unknown[]): StrategyImpact[] {
 
     const taxableIncomeDelta = normalizeRange3(asRecord(r["taxableIncomeDelta"]));
     const taxLiabilityDelta = normalizeRange3(asRecord(r["taxLiabilityDelta"]));
+    const payrollTaxDelta = normalizeRange3(asRecord(r["payrollTaxDelta"]));
     const assumptions = normalizeAssumptions(asArray(r["assumptions"]) ?? []);
 
     out.push({
@@ -509,6 +546,7 @@ function normalizeStrategyImpacts(arr: unknown[]): StrategyImpact[] {
       needsConfirmation: asBoolean(r["needsConfirmation"]),
       taxableIncomeDelta,
       taxLiabilityDelta,
+      payrollTaxDelta,
       model: asString(r["model"]),
       assumptions,
     });
