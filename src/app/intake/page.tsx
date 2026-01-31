@@ -182,8 +182,10 @@ router.push("/results");
     <main style={{ ...styles.container, maxWidth: "860px" }}>
       <header style={{ marginBottom: spacing.xl }}>
         <h1 style={styles.heading1}>Tax Planning Intake</h1>
-        <p style={{ ...styles.bodyText, marginTop: spacing.sm }}>
-          Enter your details. We'll calculate a baseline estimate and potential impact from strategies.
+        <p style={{ ...styles.bodyText, marginTop: spacing.sm, lineHeight: typography.lineHeight.relaxed }}>
+          This process is quick and easy—just answer a few simple questions about your financial situation. 
+          In about a minute, you'll receive actionable figures showing your current tax situation and potential savings from various strategies. 
+          You'll also discover tax-saving strategies you may not have heard about before, each with clear explanations of how they work and who they benefit most.
         </p>
       </header>
 
@@ -387,7 +389,7 @@ router.push("/results");
           </p>
 
           <div style={{ display: "grid", gap: spacing.md }}>
-            {STRATEGY_IDS.map((id) => {
+            {STRATEGY_IDS.filter((id) => id !== "s_corp_conversion").map((id) => {
               const checked = form.strategiesInUse.includes(id as any);
               return (
                 <label key={id} style={{ display: "flex", gap: spacing.sm, alignItems: "flex-start", cursor: "pointer", padding: spacing.sm, borderRadius: borderRadius.md, transition: "background-color 0.2s ease" }}>
@@ -444,6 +446,8 @@ router.push("/results");
             disabled={!canSubmit} 
             style={{
               ...styles.button,
+              fontSize: typography.fontSize.lg,
+              padding: `${spacing.md} ${spacing.xl}`,
               opacity: canSubmit ? 1 : 0.6,
               cursor: canSubmit ? "pointer" : "not-allowed",
             }}
@@ -458,7 +462,7 @@ router.push("/results");
               }
             }}
           >
-            {submitting ? "Analyzing…" : "Analyze"}
+            {submitting ? "Analyzing…" : "Get Tax Plan Estimate Now!"}
           </button>
           <span style={{ ...styles.bodyText, fontSize: typography.fontSize.sm }}>
             Results are estimates; final eligibility depends on facts and implementation.

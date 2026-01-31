@@ -87,15 +87,15 @@ function LogoWithFallback() {
   }
 
   return (
-    <div style={{ position: "relative", height: "40px", width: "auto", minWidth: "120px" }}>
+    <div style={{ position: "relative", height: "52px", width: "auto", minWidth: "156px" }}>
       <img
         src={logoSrc}
         alt="Boyd Group Services"
         style={{
-          height: "40px",
+          height: "52px",
           width: "auto",
           objectFit: "contain" as const,
-          maxWidth: "200px",
+          maxWidth: "260px",
         }}
         onError={() => {
           setImgError(true);
