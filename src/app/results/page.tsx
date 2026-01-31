@@ -161,7 +161,7 @@ export default function ResultsPage() {
 
       {/* Baseline vs Revised Tax Breakdown */}
       {vm.baselineBreakdown && vm.revisedBreakdown && (() => {
-        const appliedStrategies = buildAppliedStrategies(vm.strategyBuckets);
+        const appliedStrategies = buildAppliedStrategies(vm.strategyBuckets, raw);
         
         // Dev-only invariant check: sum of applied AGI reductions should equal baseline AGI - revised AGI
         if (process.env.NODE_ENV !== "production" && vm.strategyBuckets) {
@@ -384,13 +384,31 @@ function asNumber(v: unknown): number | null {
 /* Applied strategies builder                                         */
 /* ------------------------------------------------------------------ */
 
-function buildAppliedStrategies(buckets: StrategyBuckets | null): Array<{
+function buildAppliedStrategies(buckets: StrategyBuckets | null, raw: JsonRecord | null): Array<{
   strategyId: string;
   label: string;
   agiDeltaBase: number;
   taxSavings: number;
 }> {
   if (!buckets) return [];
+
+  // Build a map of payrollTaxDelta from impact_summary.impacts as a fallback
+  const payrollTaxDeltaMap = new Map<string, { low: number; base: number; high: number }>();
+  if (raw) {
+    const impactSummary = asRecord(raw["impact_summary"]);
+    const impacts = asArray(impactSummary?.["impacts"]);
+    if (impacts) {
+      for (const item of impacts) {
+        const impact = asRecord(item);
+        if (!impact) continue;
+        const strategyId = asString(impact["strategyId"]);
+        const payrollTaxDelta = normalizeRange3(asRecord(impact["payrollTaxDelta"]));
+        if (strategyId && payrollTaxDelta) {
+          payrollTaxDeltaMap.set(strategyId, payrollTaxDelta);
+        }
+      }
+    }
+  }
 
   // Include all strategies with APPLIED flag from all tiers
   const allStrategies = [...buckets.applied, ...buckets.opportunities];
@@ -420,13 +438,15 @@ function buildAppliedStrategies(buckets: StrategyBuckets | null): Array<{
     const agiDeltaBase = s.taxableIncomeDelta?.base ?? 0;
     
     // Calculate tax savings:
-    // - For s_corp_conversion: use payrollTaxDelta if available, otherwise taxLiabilityDelta
+    // - For s_corp_conversion: use payrollTaxDelta if available (from bucket or impact summary), otherwise taxLiabilityDelta
     // - For others: use taxLiabilityDelta if available, otherwise estimate from taxableIncomeDelta
     let taxSavings = 0;
     if (s.strategyId === "s_corp_conversion") {
       // s_corp_conversion primarily saves on payroll tax
-      if (s.payrollTaxDelta) {
-        taxSavings = Math.abs(s.payrollTaxDelta.base);
+      // First check bucket item, then fall back to impact summary
+      const payrollTaxDelta = s.payrollTaxDelta ?? payrollTaxDeltaMap.get(s.strategyId);
+      if (payrollTaxDelta) {
+        taxSavings = Math.abs(payrollTaxDelta.base);
       } else if (s.taxLiabilityDelta) {
         // Fallback to taxLiabilityDelta if payrollTaxDelta not available
         taxSavings = Math.abs(s.taxLiabilityDelta.base);

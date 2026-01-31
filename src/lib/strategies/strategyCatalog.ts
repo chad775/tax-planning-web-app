@@ -154,7 +154,7 @@ export const STRATEGY_CATALOG: Record<StrategyId, StrategyMeta> = {
     combineMode: "solo",
     minBaselineTaxableIncome: 350_000,
     uiLabel: "RTU Program",
-    uiSummary: "Qualify as a real estate professional to unlock additional tax benefits from rental property activities.",
+    uiSummary: "This is an investment in business-use software where you acquire usage rights and lease those rights back for ongoing income.",
     uiDescription: {
       heading: "RTU Program (Right-to-Use Software Investment) — This is a high-impact strategy that pairs a large upfront deduction with an income-producing asset—but it's not for everyone.",
       whatThisStrategyIs: "This is an investment in business-use software where you acquire usage rights and lease those rights back for ongoing income. The structure combines business ownership, financing, and software use.",

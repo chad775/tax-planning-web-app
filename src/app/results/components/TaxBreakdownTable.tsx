@@ -71,12 +71,17 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
   const rowStyle: React.CSSProperties = {
     borderTop: `1px solid ${colors.border}`,
     padding: `${spacing.sm} 0`,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.md,
   };
 
   const labelStyle: React.CSSProperties = {
     fontWeight: typography.fontWeight.semibold,
     color: colors.textSecondary,
     fontSize: typography.fontSize.sm,
+    flex: "1 1 auto",
   };
 
   const valueStyle: React.CSSProperties = {
@@ -84,6 +89,8 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
     color: colors.textPrimary,
     fontSize: typography.fontSize.sm,
     textAlign: "right" as const,
+    flex: "0 0 auto",
+    minWidth: "100px",
   };
 
   const sectionHeaderStyle: React.CSSProperties = {

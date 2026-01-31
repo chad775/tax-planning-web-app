@@ -536,9 +536,9 @@ export async function POST(req: Request) {
       if (reasonableSalary > 0) {
         // Add reasonable salary to W-2 wages (subject to FICA)
         revisedIncomeW2 = incomeW2 + reasonableSalary;
-        // Business profit stays the same (distributions are not subject to SE tax)
-        // Note: For payroll tax calculation, net_profit represents distributions
-        revisedBusinessProfit = bizProfit;
+        // Reduce business profit by reasonable salary (that portion is now W-2 wages, not business profit)
+        // The remaining business profit becomes distributions (not subject to SE tax)
+        revisedBusinessProfit = Math.max(0, bizProfit - reasonableSalary);
       }
     }
 
