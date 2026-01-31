@@ -7,6 +7,7 @@ import { TaxBreakdownTable, type TaxBreakdown } from "./components/TaxBreakdownT
 import { StrategyBucket } from "./components/StrategyBucket";
 import { STRATEGY_CATALOG } from "@/lib/strategies/strategyCatalog";
 import type { StrategyId } from "@/contracts/strategyIds";
+import { colors, typography, spacing, borderRadius, shadows, styles } from "@/lib/ui/designSystem";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -82,21 +83,31 @@ export default function ResultsPage() {
 
   if (error) {
     return (
-      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, margin: "0 0 10px" }}>Results</h1>
+      <main style={styles.container}>
+        <h1 style={styles.heading1}>Results</h1>
         <div
           role="alert"
           style={{
-            border: "1px solid #c00",
-            background: "#fff5f5",
-            padding: 12,
-            borderRadius: 10,
+            border: `1px solid ${colors.error}`,
+            background: "#fef2f2",
+            padding: spacing.md,
+            borderRadius: borderRadius.lg,
+            marginTop: spacing.md,
           }}
         >
           {error}
         </div>
-        <div style={{ marginTop: 16 }}>
-          <button onClick={() => router.push("/intake")} style={buttonStyle}>
+        <div style={{ marginTop: spacing.lg }}>
+          <button 
+            onClick={() => router.push("/intake")} 
+            style={styles.button}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = colors.primaryDark;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = colors.primary;
+            }}
+          >
             Back to intake
           </button>
         </div>
@@ -106,26 +117,26 @@ export default function ResultsPage() {
 
   if (!raw || !vm) {
     return (
-      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0 }}>Results</h1>
-        <p style={{ color: "#444" }}>Loading…</p>
+      <main style={styles.container}>
+        <h1 style={styles.heading1}>Results</h1>
+        <p style={styles.bodyText}>Loading…</p>
       </main>
     );
   }
 
   return (
-    <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px" }}>
-      <header style={{ display: "grid", gap: 6, marginBottom: 24 }}>
-        <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0 }}>Your Tax Planning Results</h1>
-        <p style={{ margin: 0, color: "#666", fontSize: 15 }}>
+    <main style={styles.container}>
+      <header style={{ display: "grid", gap: spacing.sm, marginBottom: spacing.xl }}>
+        <h1 style={styles.heading1}>Your Tax Planning Results</h1>
+        <p style={{ ...styles.bodyText, margin: 0 }}>
           These are estimates based on the information provided. Final eligibility and savings depend on your facts and
           implementation.
         </p>
       </header>
 
       {/* Overview Section */}
-      <section style={cardStyle}>
-        <h2 style={h2Style}>Overview</h2>
+      <section style={{ ...styles.card, marginBottom: spacing.lg }}>
+        <h2 style={styles.heading2}>Overview</h2>
         <div style={pillRowStyle}>
           <Pill label="Request ID" value={vm.requestId ?? "—"} />
           <Pill label="Filing Status" value={vm.filingStatus ?? "—"} />
@@ -138,9 +149,9 @@ export default function ResultsPage() {
         </div>
 
         {vm.executiveSummary && (
-          <div style={{ marginTop: 16 }}>
-            <h3 style={h3Style}>Executive Summary</h3>
-            <p style={{ margin: 0, whiteSpace: "pre-wrap", color: "#111", lineHeight: 1.6 }}>
+          <div style={{ marginTop: spacing.lg, paddingTop: spacing.lg, borderTop: `1px solid ${colors.border}` }}>
+            <h3 style={styles.heading3}>Executive Summary</h3>
+            <p style={{ ...styles.bodyText, margin: 0, whiteSpace: "pre-wrap", marginTop: spacing.sm }}>
               {vm.executiveSummary}
             </p>
           </div>
@@ -170,8 +181,8 @@ export default function ResultsPage() {
         }
         
         return (
-          <section style={cardStyle}>
-            <h2 style={h2Style}>Tax Breakdown: Baseline vs After Strategies</h2>
+          <section style={{ ...styles.card, marginBottom: spacing.lg }}>
+            <h2 style={styles.heading2}>Tax Breakdown: Baseline vs After Strategies</h2>
             <TaxBreakdownTable
               baseline={vm.baselineBreakdown}
               revised={vm.revisedBreakdown}
@@ -186,8 +197,8 @@ export default function ResultsPage() {
         (() => {
           const buckets = vm.strategyBuckets;
           return (
-            <section style={cardStyle}>
-              <h2 style={h2Style}>Strategies</h2>
+            <section style={{ ...styles.card, marginBottom: spacing.lg }}>
+              <h2 style={styles.heading2}>Strategies</h2>
 
               {/* Tier 1: Quick wins */}
               <StrategyBucket
@@ -198,7 +209,7 @@ export default function ResultsPage() {
               />
 
               {/* Tier 2: Bigger opportunities */}
-              <div style={{ marginTop: 24 }}>
+              <div style={{ marginTop: spacing.xl }}>
                 <StrategyBucket
                   strategies={buckets.opportunities.filter((s) => {
                     // Defensive: exclude any strategy already in applied bucket
@@ -217,13 +228,33 @@ export default function ResultsPage() {
         })()}
 
       {/* Actions */}
-      <section style={cardStyle}>
-        <h2 style={h2Style}>Next Steps</h2>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button onClick={() => router.push("/intake")} style={buttonStyle}>
+      <section style={{ ...styles.card, marginBottom: spacing.lg }}>
+        <h2 style={styles.heading2}>Next Steps</h2>
+        <div style={{ display: "flex", gap: spacing.md, flexWrap: "wrap" }}>
+          <button 
+            onClick={() => router.push("/intake")} 
+            style={styles.button}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = colors.primaryDark;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = colors.primary;
+            }}
+          >
             Run Analysis Again
           </button>
-          <button onClick={() => copyToClipboard(JSON.stringify(raw, null, 2))} style={buttonSecondaryStyle}>
+          <button 
+            onClick={() => copyToClipboard(JSON.stringify(raw, null, 2))} 
+            style={styles.buttonSecondary}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = colors.background;
+              e.currentTarget.style.borderColor = colors.primary;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = colors.surface;
+              e.currentTarget.style.borderColor = colors.borderDark;
+            }}
+          >
             Copy Raw JSON
           </button>
         </div>
@@ -239,8 +270,12 @@ export default function ResultsPage() {
 function Pill(props: { label: string; value: string }) {
   return (
     <div style={pillStyle}>
-      <div style={{ fontSize: 12, color: "#666", fontWeight: 700 }}>{props.label}</div>
-      <div style={{ fontSize: 14, color: "#111", fontWeight: 900 }}>{props.value}</div>
+      <div style={{ fontSize: typography.fontSize.xs, color: colors.textTertiary, fontWeight: typography.fontWeight.semibold }}>
+        {props.label}
+      </div>
+      <div style={{ fontSize: typography.fontSize.sm, color: colors.textPrimary, fontWeight: typography.fontWeight.black }}>
+        {props.value}
+      </div>
     </div>
   );
 }
@@ -569,57 +604,17 @@ async function copyToClipboard(text: string) {
 /* Styles                                                             */
 /* ------------------------------------------------------------------ */
 
-const cardStyle: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 14,
-  padding: 20,
-  background: "#fff",
-  marginBottom: 20,
-};
-
-const h2Style: React.CSSProperties = {
-  margin: "0 0 16px",
-  fontSize: 20,
-  fontWeight: 900,
-};
-
-const h3Style: React.CSSProperties = {
-  margin: "0 0 8px",
-  fontSize: 16,
-  fontWeight: 900,
-};
-
 const pillRowStyle: React.CSSProperties = {
   display: "flex",
-  gap: 10,
+  gap: spacing.sm,
   flexWrap: "wrap",
 };
 
 const pillStyle: React.CSSProperties = {
-  border: "1px solid #e5e5e5",
-  background: "#fafafa",
-  borderRadius: 999,
-  padding: "8px 12px",
+  border: `1px solid ${colors.border}`,
+  background: colors.background,
+  borderRadius: borderRadius.full,
+  padding: `${spacing.sm} ${spacing.md}`,
   display: "grid",
-  gap: 2,
-};
-
-const buttonStyle: React.CSSProperties = {
-  borderRadius: 10,
-  border: "1px solid #111",
-  padding: "10px 14px",
-  background: "#111",
-  color: "#fff",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const buttonSecondaryStyle: React.CSSProperties = {
-  borderRadius: 10,
-  border: "1px solid #999",
-  padding: "10px 14px",
-  background: "#fff",
-  color: "#111",
-  fontWeight: 800,
-  cursor: "pointer",
+  gap: spacing.xs,
 };

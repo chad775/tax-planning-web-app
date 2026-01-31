@@ -16,6 +16,7 @@
  */
 
 import React from "react";
+import { colors, typography, spacing, borderRadius } from "@/lib/ui/designSystem";
 
 export type TaxBreakdown = {
   gross_income: number;
@@ -67,29 +68,29 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
   };
 
   const rowStyle: React.CSSProperties = {
-    borderTop: "1px solid #e5e5e5",
-    padding: "10px 0",
+    borderTop: `1px solid ${colors.border}`,
+    padding: `${spacing.sm} 0`,
   };
 
   const labelStyle: React.CSSProperties = {
-    fontWeight: 600,
-    color: "#333",
-    fontSize: 14,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.sm,
   };
 
   const valueStyle: React.CSSProperties = {
-    fontWeight: 700,
-    color: "#111",
-    fontSize: 14,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textPrimary,
+    fontSize: typography.fontSize.sm,
     textAlign: "right" as const,
   };
 
   const sectionHeaderStyle: React.CSSProperties = {
-    fontWeight: 900,
-    fontSize: 13,
-    color: "#111",
-    marginTop: 16,
-    marginBottom: 8,
+    fontWeight: typography.fontWeight.black,
+    fontSize: typography.fontSize.xs,
+    color: colors.textPrimary,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
     textTransform: "uppercase" as const,
     letterSpacing: "0.5px",
   };
@@ -103,7 +104,7 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: spacing.xl, alignItems: "start" }}>
         {/* Baseline Column */}
         <div>
           <div style={sectionHeaderStyle}>Baseline</div>
@@ -136,7 +137,7 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
             <div style={valueStyle}>{formatMoney(baseline.federal.ctc.used_nonrefundable)}</div>
           </div>
           {baseline.federal.ctc.unused > 0 && (
-            <div style={{ ...rowStyle, fontSize: 12, color: "#666", paddingLeft: 12 }}>
+            <div style={{ ...rowStyle, fontSize: typography.fontSize.xs, color: colors.textTertiary, paddingLeft: spacing.md }}>
               (Unused: {formatMoney(baseline.federal.ctc.unused)})
             </div>
           )}
@@ -154,9 +155,9 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
               <div style={valueStyle}>{formatMoney(baseline.totals.payrollTax)}</div>
             </div>
           )}
-          <div style={{ ...rowStyle, borderTop: "2px solid #111", paddingTop: 12, marginTop: 8 }}>
-            <div style={{ ...labelStyle, fontWeight: 900 }}>Total Tax</div>
-            <div style={{ ...valueStyle, fontWeight: 900 }}>{formatMoney(baseline.totals.totalTax)}</div>
+          <div style={{ ...rowStyle, borderTop: `2px solid ${colors.textPrimary}`, paddingTop: spacing.md, marginTop: spacing.sm }}>
+            <div style={{ ...labelStyle, fontWeight: typography.fontWeight.black }}>Total Tax</div>
+            <div style={{ ...valueStyle, fontWeight: typography.fontWeight.black }}>{formatMoney(baseline.totals.totalTax)}</div>
           </div>
         </div>
 
@@ -192,7 +193,7 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
             <div style={valueStyle}>{formatMoney(revised.federal.ctc.used_nonrefundable)}</div>
           </div>
           {revised.federal.ctc.unused > 0 && (
-            <div style={{ ...rowStyle, fontSize: 12, color: "#666", paddingLeft: 12 }}>
+            <div style={{ ...rowStyle, fontSize: typography.fontSize.xs, color: colors.textTertiary, paddingLeft: spacing.md }}>
               (Unused: {formatMoney(revised.federal.ctc.unused)})
             </div>
           )}
@@ -210,30 +211,30 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
               <div style={valueStyle}>{formatMoney(revised.totals.payrollTax)}</div>
             </div>
           )}
-          <div style={{ ...rowStyle, borderTop: "2px solid #111", paddingTop: 12, marginTop: 8 }}>
-            <div style={{ ...labelStyle, fontWeight: 900 }}>Total Tax</div>
-            <div style={{ ...valueStyle, fontWeight: 900 }}>{formatMoney(revised.totals.totalTax)}</div>
+          <div style={{ ...rowStyle, borderTop: `2px solid ${colors.textPrimary}`, paddingTop: spacing.md, marginTop: spacing.sm }}>
+            <div style={{ ...labelStyle, fontWeight: typography.fontWeight.black }}>Total Tax</div>
+            <div style={{ ...valueStyle, fontWeight: typography.fontWeight.black }}>{formatMoney(revised.totals.totalTax)}</div>
           </div>
 
           {/* Applied Strategies List */}
           {appliedStrategies.length > 0 && (
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #e5e5e5" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#666", marginBottom: 8 }}>
+            <div style={{ marginTop: spacing.xl, paddingTop: spacing.lg, borderTop: `1px solid ${colors.border}` }}>
+              <div style={{ fontSize: typography.fontSize.xs, fontWeight: typography.fontWeight.bold, color: colors.textTertiary, marginBottom: spacing.sm }}>
                 Applied Strategies (AGI Reduction)
               </div>
-              <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ display: "grid", gap: spacing.xs }}>
                 {appliedStrategies.map((strategy) => (
                   <div
                     key={strategy.strategyId}
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
-                      fontSize: 12,
-                      padding: "4px 0",
+                      fontSize: typography.fontSize.xs,
+                      padding: `${spacing.xs} 0`,
                     }}
                   >
-                    <span style={{ color: "#333" }}>{strategy.label}</span>
-                    <span style={{ fontWeight: 600, color: "#111", textAlign: "right" as const }}>
+                    <span style={{ color: colors.textSecondary }}>{strategy.label}</span>
+                    <span style={{ fontWeight: typography.fontWeight.semibold, color: colors.textPrimary, textAlign: "right" as const }}>
                       {formatMoney(strategy.agiDeltaBase)}
                     </span>
                   </div>
@@ -242,12 +243,12 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    paddingTop: 8,
-                    marginTop: 8,
-                    borderTop: "1px solid #e5e5e5",
-                    color: "#111",
+                    fontSize: typography.fontSize.xs,
+                    fontWeight: typography.fontWeight.bold,
+                    paddingTop: spacing.sm,
+                    marginTop: spacing.sm,
+                    borderTop: `1px solid ${colors.border}`,
+                    color: colors.textPrimary,
                   }}
                 >
                   <span>Total estimated AGI reduction (base):</span>
@@ -262,28 +263,28 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
       {/* Big Centered Savings Block */}
       <div
         style={{
-          marginTop: 32,
-          padding: "24px",
-          background: isSavings ? "#f0fff4" : "#fff9e6",
-          border: `2px solid ${isSavings ? "#117a2a" : "#946200"}`,
-          borderRadius: 12,
+          marginTop: spacing["2xl"],
+          padding: spacing.xl,
+          background: isSavings ? colors.savingsLight : "#fef3c7",
+          border: `2px solid ${isSavings ? colors.savings : colors.warning}`,
+          borderRadius: borderRadius.xl,
           textAlign: "center" as const,
         }}
       >
         <div
           style={{
-            fontSize: 36,
-            fontWeight: 900,
-            color: isSavings ? "#117a2a" : "#946200",
-            marginBottom: 8,
+            fontSize: typography.fontSize["4xl"],
+            fontWeight: typography.fontWeight.black,
+            color: isSavings ? colors.savings : colors.warning,
+            marginBottom: spacing.sm,
           }}
         >
           {formatMoney(savings)}
         </div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#333", marginBottom: 4 }}>
+        <div style={{ fontSize: typography.fontSize.sm, fontWeight: typography.fontWeight.bold, color: colors.textPrimary, marginBottom: spacing.xs }}>
           {isSavings ? "Estimated Savings (Base Case)" : "Estimated Increase"}
         </div>
-        <div style={{ fontSize: 12, color: "#666" }}>
+        <div style={{ fontSize: typography.fontSize.xs, color: colors.textTertiary }}>
           Baseline total tax minus after-strategies total tax.
         </div>
       </div>

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { mapUiToNormalizedIntake } from "../../lib/ui/intakeMapper";
 import type { UiIntakeFormState } from "../../lib/ui/types";
 import { STRATEGY_IDS } from "../../contracts/strategyIds";
+import { colors, typography, spacing, borderRadius, shadows, styles } from "../../lib/ui/designSystem";
 
 type AnalyzeApiResponse = unknown;
 
@@ -176,33 +177,39 @@ router.push("/results");
   }
 
   return (
-    <main style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Tax Planning Intake</h1>
-      <p style={{ marginTop: 0, color: "#444" }}>
-        Enter your details. We’ll calculate a baseline estimate and potential impact from strategies.
-      </p>
+    <main style={{ ...styles.container, maxWidth: "860px" }}>
+      <header style={{ marginBottom: spacing.xl }}>
+        <h1 style={styles.heading1}>Tax Planning Intake</h1>
+        <p style={{ ...styles.bodyText, marginTop: spacing.sm }}>
+          Enter your details. We'll calculate a baseline estimate and potential impact from strategies.
+        </p>
+      </header>
 
       {formError && (
         <div
           role="alert"
           style={{
-            border: "1px solid #c00",
-            background: "#fff5f5",
-            padding: 12,
-            borderRadius: 8,
-            margin: "12px 0 16px",
+            border: `1px solid ${colors.error}`,
+            background: "#fef2f2",
+            padding: spacing.md,
+            borderRadius: borderRadius.lg,
+            marginBottom: spacing.lg,
           }}
         >
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Error</div>
-          <div>{formError}</div>
+          <div style={{ fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs, color: colors.error }}>
+            Error
+          </div>
+          <div style={{ color: colors.textPrimary }}>{formError}</div>
 
           {fieldIssues.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Validation issues</div>
-              <ul style={{ margin: 0, paddingLeft: 18, color: "#b00020", fontSize: 12 }}>
+            <div style={{ marginTop: spacing.md }}>
+              <div style={{ fontWeight: typography.fontWeight.semibold, marginBottom: spacing.xs, fontSize: typography.fontSize.sm, color: colors.error }}>
+                Validation issues
+              </div>
+              <ul style={{ margin: 0, paddingLeft: spacing.lg, color: colors.error, fontSize: typography.fontSize.sm }}>
                 {fieldIssues.map((i, idx) => (
-                  <li key={idx}>
-                    <code>{i.path}</code>: {i.message}
+                  <li key={idx} style={{ marginBottom: spacing.xs }}>
+                    <code style={{ background: "#fee2e2", padding: "2px 4px", borderRadius: borderRadius.sm }}>{i.path}</code>: {i.message}
                   </li>
                 ))}
               </ul>
@@ -211,9 +218,9 @@ router.push("/results");
         </div>
       )}
 
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: 16 }}>
-        <section style={cardStyle}>
-          <h2 style={h2Style}>Contact</h2>
+      <form onSubmit={onSubmit} style={{ display: "grid", gap: spacing.lg }}>
+        <section style={styles.card}>
+          <h2 style={styles.heading2}>Contact</h2>
 
           <div style={grid2Style}>
             <Field label="Email" issues={issuesFor("contact.email")}>
@@ -247,8 +254,8 @@ router.push("/results");
           </div>
         </section>
 
-        <section style={cardStyle}>
-          <h2 style={h2Style}>Personal</h2>
+        <section style={styles.card}>
+          <h2 style={styles.heading2}>Personal</h2>
 
           <div style={grid2Style}>
             <Field label="Filing status" issues={issuesFor("personal.filing_status")}>
@@ -306,11 +313,11 @@ router.push("/results");
           </div>
         </section>
 
-        <section style={cardStyle}>
-          <h2 style={h2Style}>Business</h2>
+        <section style={styles.card}>
+          <h2 style={styles.heading2}>Business</h2>
 
-          <div style={{ display: "grid", gap: 12 }}>
-            <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ display: "grid", gap: spacing.md }}>
+            <label style={{ display: "flex", gap: spacing.sm, alignItems: "center", cursor: "pointer" }}>
               <input
                 type="checkbox"
                 checked={!!form.hasBusiness}
@@ -323,8 +330,9 @@ router.push("/results");
                     set("employeesCount", 0);
                   }
                 }}
+                style={{ width: "18px", height: "18px", cursor: "pointer" }}
               />
-              <span>Has a business</span>
+              <span style={{ fontSize: typography.fontSize.base, color: colors.textPrimary }}>Has a business</span>
             </label>
 
             <div style={grid2Style}>
@@ -370,26 +378,26 @@ router.push("/results");
           </div>
         </section>
 
-        <section style={cardStyle}>
-          <h2 style={h2Style}>Strategies already in use</h2>
-          <p style={{ marginTop: 0, color: "#444" }}>
-            Check any strategies you are already using. If 401(k) is checked, we’ll ask how much you’ve contributed YTD.
+        <section style={styles.card}>
+          <h2 style={styles.heading2}>Strategies already in use</h2>
+          <p style={{ ...styles.bodyText, marginTop: 0 }}>
+            Check any strategies you are already using. If 401(k) is checked, we'll ask how much you've contributed YTD.
           </p>
 
-          <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: spacing.md }}>
             {STRATEGY_IDS.map((id) => {
               const checked = form.strategiesInUse.includes(id as any);
               return (
-                <label key={id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <label key={id} style={{ display: "flex", gap: spacing.sm, alignItems: "flex-start", cursor: "pointer", padding: spacing.sm, borderRadius: borderRadius.md, transition: "background-color 0.2s ease" }}>
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleStrategy(id)}
-                    style={{ marginTop: 3 }}
+                    style={{ marginTop: 3, width: "18px", height: "18px", cursor: "pointer" }}
                   />
                   <span>
-                    <strong>{labelForStrategy(id)}</strong>
-                    <div style={{ color: "#666", fontSize: 12 }}>{id}</div>
+                    <strong style={{ fontSize: typography.fontSize.base, color: colors.textPrimary }}>{labelForStrategy(id)}</strong>
+                    <div style={{ color: colors.textTertiary, fontSize: typography.fontSize.xs, marginTop: spacing.xs }}>{id}</div>
                   </span>
                 </label>
               );
@@ -397,8 +405,8 @@ router.push("/results");
           </div>
 
           {k401Checked && (
-            <div style={{ marginTop: 14 }}>
-              <h3 style={{ margin: "10px 0 8px", fontSize: 16 }}>401(k) details</h3>
+            <div style={{ marginTop: spacing.lg, paddingTop: spacing.lg, borderTop: `1px solid ${colors.border}` }}>
+              <h3 style={styles.heading3}>401(k) details</h3>
               <div style={grid2Style}>
                 <Field
                   label="401(k) employee contributions YTD"
@@ -413,18 +421,36 @@ router.push("/results");
                   />
                 </Field>
               </div>
-              <p style={{ margin: "8px 0 0", color: "#666", fontSize: 12 }}>
+              <p style={{ ...styles.bodyText, marginTop: spacing.sm, fontSize: typography.fontSize.sm }}>
                 This is used as an input to estimate remaining room and strategy impact (best-effort).
               </p>
             </div>
           )}
         </section>
 
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <button type="submit" disabled={!canSubmit} style={buttonStyle}>
+        <div style={{ display: "flex", gap: spacing.md, alignItems: "center", flexWrap: "wrap" }}>
+          <button 
+            type="submit" 
+            disabled={!canSubmit} 
+            style={{
+              ...styles.button,
+              opacity: canSubmit ? 1 : 0.6,
+              cursor: canSubmit ? "pointer" : "not-allowed",
+            }}
+            onMouseEnter={(e) => {
+              if (canSubmit) {
+                e.currentTarget.style.background = colors.primaryDark;
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (canSubmit) {
+                e.currentTarget.style.background = colors.primary;
+              }
+            }}
+          >
             {submitting ? "Analyzing…" : "Analyze"}
           </button>
-          <span style={{ color: "#555" }}>
+          <span style={{ ...styles.bodyText, fontSize: typography.fontSize.sm }}>
             Results are estimates; final eligibility depends on facts and implementation.
           </span>
         </div>
@@ -435,26 +461,29 @@ router.push("/results");
 
 function Field(props: { label: string; issues: string[]; children: React.ReactNode }) {
   const hasIssues = props.issues.length > 0;
+  const [isFocused, setIsFocused] = React.useState(false);
+  
   return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-        <label style={{ fontWeight: 600 }}>{props.label}</label>
-        {hasIssues && <span style={{ color: "#b00020", fontSize: 12 }}>Needs attention</span>}
+    <div style={{ display: "grid", gap: spacing.xs }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: spacing.md }}>
+        <label style={styles.label}>{props.label}</label>
+        {hasIssues && <span style={{ color: colors.error, fontSize: typography.fontSize.xs, fontWeight: typography.fontWeight.medium }}>Needs attention</span>}
       </div>
       <div
         style={{
-          border: hasIssues ? "1px solid #b00020" : "1px solid #ccc",
-          borderRadius: 8,
-          padding: 8,
-          background: "#fff",
+          ...styles.input,
+          border: hasIssues ? `1px solid ${colors.error}` : isFocused ? `1px solid ${colors.primary}` : `1px solid ${colors.border}`,
+          boxShadow: isFocused && !hasIssues ? `0 0 0 3px ${colors.primaryLight}33` : "none",
         }}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
       >
         {props.children}
       </div>
       {hasIssues && (
-        <ul style={{ margin: 0, paddingLeft: 18, color: "#b00020", fontSize: 12 }}>
+        <ul style={{ margin: 0, paddingLeft: spacing.lg, color: colors.error, fontSize: typography.fontSize.xs }}>
           {props.issues.map((m, idx) => (
-            <li key={idx}>{m}</li>
+            <li key={idx} style={{ marginBottom: spacing.xs }}>{m}</li>
           ))}
         </ul>
       )}
@@ -462,39 +491,19 @@ function Field(props: { label: string; issues: string[]; children: React.ReactNo
   );
 }
 
-const cardStyle: React.CSSProperties = {
-  border: "1px solid #ddd",
-  borderRadius: 12,
-  padding: 16,
-  background: "#fff",
-};
-
-const h2Style: React.CSSProperties = {
-  margin: "0 0 12px",
-  fontSize: 18,
-  fontWeight: 700,
-};
-
 const grid2Style: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-  gap: 12,
+  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+  gap: spacing.md,
 };
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
   border: "none",
   outline: "none",
-  fontSize: 14,
-  padding: 6,
-};
-
-const buttonStyle: React.CSSProperties = {
-  borderRadius: 10,
-  border: "1px solid #111",
-  padding: "10px 14px",
-  background: "#111",
-  color: "#fff",
-  fontWeight: 700,
-  cursor: "pointer",
+  fontSize: typography.fontSize.base,
+  padding: 0,
+  background: "transparent",
+  color: colors.textPrimary,
+  fontFamily: typography.fontFamily.sans,
 };
