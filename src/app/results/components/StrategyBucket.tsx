@@ -139,13 +139,18 @@ export function StrategyBucket({
   const formatIncomeReduction = (range: { low: number; base: number; high: number } | null): string => {
     if (range === null) return "—";
     const base = Math.abs(range.base);
-    const low = Math.abs(range.low);
-    const high = Math.abs(range.high);
+    const lowAbs = Math.abs(range.low);
+    const highAbs = Math.abs(range.high);
 
-    if (low === base && base === high) {
+    if (lowAbs === base && base === highAbs) {
       return `About ${formatMoney(-base)}`;
     }
-    return `About ${formatMoney(-base)} (range ${formatMoney(-low)} to ${formatMoney(-high)})`;
+    // Show range from smallest to largest (lowAbs is typically the smallest absolute value, highAbs is largest)
+    // But since these are negative numbers, low is more negative (larger absolute), high is less negative (smaller absolute)
+    // So we want to show: smallest absolute value first, then largest
+    const minAbs = Math.min(lowAbs, highAbs);
+    const maxAbs = Math.max(lowAbs, highAbs);
+    return `About ${formatMoney(-base)} (range ${formatMoney(-minAbs)} to ${formatMoney(-maxAbs)})`;
   };
 
   const getFriendlyStatus = (status: string | null): string => {
@@ -321,27 +326,131 @@ export function StrategyBucket({
 
           const netSavings = tier === 2 && estimatedCost !== null && taxSavings !== null ? taxSavings - estimatedCost : null;
 
-          // Build reason why not applied (clear, plain English)
-          const whyNotApplied: string[] = [];
-          if (strategy.needsConfirmation) {
-            whyNotApplied.push("Needs a quick fact check");
-          }
-          if (strategy.flags.includes("CAPPED_BY_TAXABLE_INCOME")) {
-            whyNotApplied.push("Limited by your current taxable income");
-          }
-          if (strategy.flags.includes("ALREADY_IN_USE")) {
-            whyNotApplied.push("Already in use (additional savings may be $0)");
-          }
-          if (strategy.status === "NOT_ELIGIBLE") {
-            const narrativeReason = narrativeExplanation?.why_it_applies_or_not;
-            if (narrativeReason) {
-              whyNotApplied.push(narrativeReason);
-            } else {
-              whyNotApplied.push("Not eligible based on your current situation");
+          // Build advisor-like explanation for why this needs review (8th-grade level, helpful, actionable)
+          const buildWhyNeedsReview = (): string | null => {
+            const reasons: string[] = [];
+            const needsInfo: string[] = [];
+            let isInBestInterest = false;
+            let hasCostBenefit = false;
+
+            // Check assumptions for specific needs
+            const hasDataGap = strategy.assumptions.some((a) => a.category === "DATA_GAP");
+            const requiresCostBenefitReview = strategy.assumptions.some((a) => a.id === "REQUIRES_COST_BENEFIT_REVIEW");
+            const requiresPlanDesign = strategy.assumptions.some((a) => a.id === "REQUIRES_PLAN_DESIGN");
+            const requiresProgramSpecs = strategy.assumptions.some((a) => a.id === "REQUIRES_PROGRAM_SPECIFICS");
+            const requiresPropertyFacts = strategy.assumptions.some((a) => a.id === "REQUIRES_PROPERTY_AND_PARTICIPATION_FACTS");
+            const requiresPayrollSetup = strategy.assumptions.some((a) => a.id === "REQUIRES_PAYROLL_SETUP");
+            const requiresReasonableSalary = strategy.assumptions.some((a) => a.id === "REQUIRES_REASONABLE_SALARY");
+            const needsWageSubstantiation = strategy.assumptions.some((a) => a.id === "NEEDS_WAGE_AND_SUBSTANTIATION");
+            const requiresPlanSubstantiation = strategy.assumptions.some((a) => a.id === "REQUIRES_PLAN_AND_SUBSTANTIATION");
+            const incomeGateNotMet = strategy.assumptions.some((a) => a.id === "INCOME_GATE_NOT_MET");
+            const incomeGateValue = strategy.assumptions.find((a) => a.id === "INCOME_GATE_NOT_MET")?.value as number | undefined;
+
+            // Check flags
+            const isCappedByIncome = strategy.flags.includes("CAPPED_BY_TAXABLE_INCOME");
+            const isAlreadyInUse = strategy.flags.includes("ALREADY_IN_USE");
+            const isNotEligible = strategy.status === "NOT_ELIGIBLE";
+            const isPotential = strategy.status === "POTENTIAL";
+
+            // Build explanation based on specific needs
+            if (requiresCostBenefitReview) {
+              reasons.push("We need to review the costs versus benefits to make sure this makes financial sense for you.");
+              needsInfo.push("the upfront investment amount and ongoing costs");
+              hasCostBenefit = true;
             }
-          } else if (strategy.status === "POTENTIAL") {
-            whyNotApplied.push("May be eligible with additional information");
-          }
+
+            if (requiresPlanDesign) {
+              reasons.push("This requires setting up a retirement plan, which needs professional design and IRS approval.");
+              needsInfo.push("your retirement goals and timeline");
+              isInBestInterest = true;
+            }
+
+            if (requiresProgramSpecs) {
+              reasons.push("We need to review the specific program details to confirm it's a good fit.");
+              needsInfo.push("which program you're considering and its current terms");
+              hasCostBenefit = true;
+            }
+
+            if (requiresPropertyFacts) {
+              reasons.push("We need details about the property and your participation to see if this works for you.");
+              needsInfo.push("property purchase price, location, and how much time you'll spend managing it");
+              isInBestInterest = true;
+            }
+
+            if (requiresPayrollSetup || requiresReasonableSalary) {
+              reasons.push("Converting to an S-corp requires setting up payroll and determining a reasonable salary amount.");
+              needsInfo.push("your typical work duties and how much you'd pay yourself as salary");
+              isInBestInterest = true;
+            }
+
+            if (needsWageSubstantiation) {
+              reasons.push("We need to confirm the actual wages paid and make sure you have proper documentation.");
+              needsInfo.push("how much you're paying your children and proof of the work they're doing");
+              isInBestInterest = true;
+            }
+
+            if (requiresPlanSubstantiation) {
+              reasons.push("This requires setting up a medical reimbursement plan and keeping good records of expenses.");
+              needsInfo.push("your typical medical expenses and whether you want to set up a formal plan");
+              isInBestInterest = true;
+            }
+
+            if (incomeGateNotMet && incomeGateValue) {
+              reasons.push(`This strategy typically works best when your taxable income is at least ${formatMoney(incomeGateValue)}. Right now your income is below that threshold.`);
+              isInBestInterest = false;
+            }
+
+            if (isCappedByIncome) {
+              reasons.push("The potential savings are limited by your current taxable income level.");
+            }
+
+            if (isAlreadyInUse) {
+              const remainingRoom = getAssumptionNumber(strategy.assumptions, "ALREADY_IN_USE_REMAINING_ROOM");
+              if (remainingRoom && remainingRoom > 0) {
+                reasons.push(`You're already using this strategy, but you could contribute up to ${formatMoney(remainingRoom)} more to maximize your savings.`);
+                isInBestInterest = true;
+              } else {
+                reasons.push("You're already using this strategy at the maximum level, so there's no additional savings available.");
+              }
+            }
+
+            if (isNotEligible) {
+              const narrativeReason = narrativeExplanation?.why_it_applies_or_not;
+              if (narrativeReason && narrativeReason.length > 0) {
+                reasons.push(narrativeReason);
+              } else {
+                reasons.push("Based on your current situation, you don't meet the requirements for this strategy right now.");
+              }
+            } else if (isPotential) {
+              reasons.push("This might work for you, but we need a bit more information to be sure.");
+            }
+
+            if (strategy.needsConfirmation && reasons.length === 0) {
+              reasons.push("We need to verify a few details to make sure this strategy fits your situation.");
+            }
+
+            // Build the final explanation
+            if (reasons.length === 0) return null;
+
+            let explanation = reasons.join(" ");
+
+            // Add helpful context
+            if (isInBestInterest && !isNotEligible) {
+              explanation += " This could be worth exploring further.";
+            }
+
+            if (hasCostBenefit && !isNotEligible) {
+              explanation += " We'll help you weigh the costs against the tax savings to see if it's worth it.";
+            }
+
+            if (needsInfo.length > 0) {
+              explanation += ` To move forward, we'd need: ${needsInfo.join(", ")}.`;
+            }
+
+            return explanation;
+          };
+
+          const whyNeedsReview = buildWhyNeedsReview();
 
           return (
             <div key={strategy.strategyId} style={cardStyle}>
@@ -488,16 +597,14 @@ export function StrategyBucket({
               )}
 
               {/* Why this needs review */}
-              {whyNotApplied.length > 0 && (
+              {whyNeedsReview && (
                 <div style={{ marginTop: spacing.md, padding: spacing.md, background: "#fef3c7", borderRadius: borderRadius.lg, border: `1px solid ${colors.warning}` }}>
                   <div style={{ fontSize: typography.fontSize.xs, fontWeight: typography.fontWeight.bold, color: colors.warning, marginBottom: spacing.xs }}>
                     Why this needs review
                   </div>
-                  {whyNotApplied.map((reason, idx) => (
-                    <div key={idx} style={{ fontSize: typography.fontSize.xs, color: colors.textTertiary, lineHeight: typography.lineHeight.normal }}>
-                      • {reason}
-                    </div>
-                  ))}
+                  <div style={{ fontSize: typography.fontSize.sm, color: colors.textSecondary, lineHeight: typography.lineHeight.relaxed }}>
+                    {whyNeedsReview}
+                  </div>
                 </div>
               )}
 

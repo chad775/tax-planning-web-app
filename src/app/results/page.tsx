@@ -138,7 +138,7 @@ export default function ResultsPage() {
       {/* Overview Section */}
       <section style={{ ...styles.card, marginBottom: spacing.lg }}>
         <h2 style={styles.heading2}>Overview</h2>
-        <div style={pillRowStyle}>
+        <div style={{ ...pillRowStyle, marginTop: spacing.md }}>
           <Pill label="Request ID" value={vm.requestId ?? "—"} />
           <Pill label="Filing Status" value={vm.filingStatus ?? "—"} />
           <Pill label="State" value={vm.state ?? "—"} />

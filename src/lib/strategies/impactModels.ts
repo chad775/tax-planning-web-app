@@ -178,6 +178,41 @@ export const k401EmployeeDeferralModel: ImpactModel = {
       });
     }
 
+    // Special handling for k401: if already in use but there's remaining contribution room,
+    // show the remaining room as potential savings (don't zero it out).
+    // Only zero it out if there's no remaining room (already maxed out).
+    if (ctx.alreadyInUse) {
+      flags.push("ALREADY_IN_USE");
+      if (room === 0) {
+        // Already maxed out - zero increment
+        assumptions.push({
+          id: "ALREADY_IN_USE_ZERO_INCREMENT",
+          category: "INTERACTION",
+          value: true,
+        });
+        return {
+          model: "deferral_range",
+          needsConfirmation: false,
+          taxableIncomeDelta: makeRange3(0, 0, 0),
+          assumptions,
+          inputsToTighten: [],
+          flags,
+        };
+      } else {
+        // Still has room - show remaining room as potential savings
+        assumptions.push({
+          id: "ALREADY_IN_USE_REMAINING_ROOM",
+          category: "INTERACTION",
+          value: room,
+        });
+        assumptions.push({
+          id: "CURRENT_CONTRIBUTION_YTD",
+          category: "DEFAULT",
+          value: ytd,
+        });
+      }
+    }
+
     const estimate: Omit<StrategyImpactEstimate, "strategyId" | "status"> = {
       model: "deferral_range",
       needsConfirmation: false,
@@ -187,7 +222,7 @@ export const k401EmployeeDeferralModel: ImpactModel = {
       flags,
     };
 
-    return withAlreadyInUseFlag(estimate, ctx.alreadyInUse);
+    return estimate;
   },
 };
 
