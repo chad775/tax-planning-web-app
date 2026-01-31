@@ -149,14 +149,23 @@ export default function ResultsPage() {
           )}
         </div>
 
-        {vm.executiveSummary && (
-          <div style={{ marginTop: spacing.lg, paddingTop: spacing.lg, borderTop: `1px solid ${colors.border}` }}>
-            <h3 style={styles.heading3}>Executive Summary</h3>
-            <p style={{ ...styles.bodyText, margin: 0, whiteSpace: "pre-wrap", marginTop: spacing.sm }}>
-              {vm.executiveSummary}
-            </p>
-          </div>
-        )}
+        {(() => {
+          const enhancedSummary = buildEnhancedExecutiveSummary(vm, raw);
+          if (!enhancedSummary) return null;
+          
+          return (
+            <div style={{ marginTop: spacing.lg, paddingTop: spacing.lg, borderTop: `1px solid ${colors.border}` }}>
+              <h3 style={styles.heading3}>Executive Summary</h3>
+              <div style={{ ...styles.bodyText, margin: 0, marginTop: spacing.sm, lineHeight: typography.lineHeight.relaxed }}>
+                {enhancedSummary.map((paragraph, idx) => (
+                  <p key={idx} style={{ marginBottom: spacing.md, marginTop: idx === 0 ? 0 : spacing.md }}>
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       {/* Baseline vs Revised Tax Breakdown */}
@@ -378,6 +387,124 @@ function asString(v: unknown): string | null {
 
 function asNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Enhanced executive summary builder                                 */
+/* ------------------------------------------------------------------ */
+
+function buildEnhancedExecutiveSummary(vm: ResultsViewModel | null, raw: JsonRecord | null): string[] | null {
+  if (!vm || !raw) return null;
+
+  const intake = asRecord(raw["intake"]);
+  const personal = asRecord(intake?.["personal"]);
+  const business = asRecord(intake?.["business"]);
+  const baseline = asRecord(raw["baseline"]);
+  const impactSummary = asRecord(raw["impact_summary"]);
+  const revisedTotals = asRecord(impactSummary?.["revisedTotals"]);
+  const revised = asRecord(revisedTotals?.["revised"]);
+
+  // Extract key data
+  const filingStatus = vm.filingStatus;
+  const state = vm.state;
+  const hasBusiness = vm.hasBusiness;
+  const businessType = vm.businessType;
+  const childrenCount = vm.childrenCount ?? 0;
+  const incomeW2 = asNumber(personal?.["income_excl_business"]) ?? 0;
+  const businessProfit = asNumber(business?.["net_profit"]) ?? 0;
+  const totalIncome = incomeW2 + businessProfit;
+  const baselineTotalTax = asNumber(baseline?.["totalTax"]) ?? 0;
+  const revisedTotalTax = asNumber(revised?.["totalTax"]) ?? 0;
+  const savings = baselineTotalTax - revisedTotalTax;
+  const appliedCount = vm.strategyBuckets?.applied.length ?? 0;
+  const opportunitiesCount = vm.strategyBuckets?.opportunities.length ?? 0;
+
+  // Format helpers
+  const formatMoney = (amount: number): string => {
+    return `$${Math.round(amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  };
+
+  const formatFilingStatus = (status: string | null): string => {
+    if (!status) return "your filing status";
+    const map: Record<string, string> = {
+      SINGLE: "single",
+      MARRIED_FILING_JOINTLY: "married filing jointly",
+      MARRIED_FILING_SEPARATELY: "married filing separately",
+      HEAD_OF_HOUSEHOLD: "head of household",
+    };
+    return map[status] ?? status.toLowerCase().replace(/_/g, " ");
+  };
+
+  const paragraphs: string[] = [];
+
+  // Paragraph 1: Your situation
+  let para1 = `Based on your situation as ${filingStatus ? `someone filing ${formatFilingStatus(filingStatus)}` : "a taxpayer"}`;
+  if (state) {
+    para1 += ` in ${state}`;
+  }
+  if (hasBusiness && businessType) {
+    para1 += ` with a ${businessType.toLowerCase()} business`;
+  } else if (hasBusiness) {
+    para1 += ` with a business`;
+  }
+  if (childrenCount > 0) {
+    para1 += ` and ${childrenCount} ${childrenCount === 1 ? "child" : "children"}`;
+  }
+  para1 += `, we've analyzed your tax situation for 2025. `;
+  
+  if (totalIncome > 0) {
+    para1 += `Your total income is around ${formatMoney(totalIncome)}`;
+    if (hasBusiness && businessProfit > 0 && incomeW2 > 0) {
+      para1 += ` (${formatMoney(incomeW2)} from wages and ${formatMoney(businessProfit)} from your business)`;
+    } else if (hasBusiness && businessProfit > 0) {
+      para1 += ` from your business`;
+    }
+    para1 += `. `;
+  }
+  
+  para1 += `Without any tax planning strategies, you would owe approximately ${formatMoney(baselineTotalTax)} in total taxes this year.`;
+  paragraphs.push(para1);
+
+  // Paragraph 2: What we found
+  let para2 = `The good news is we found ${appliedCount > 0 ? `${appliedCount} ${appliedCount === 1 ? "strategy" : "strategies"}` : "several strategies"} that can help reduce your tax bill. `;
+  
+  if (appliedCount > 0) {
+    para2 += `These ${appliedCount === 1 ? "strategy is" : "strategies are"} already applied in the calculations below and ${appliedCount === 1 ? "shows" : "show"} how much you could save. `;
+  }
+  
+  if (savings > 0) {
+    para2 += `By using these strategies, your total tax could drop to around ${formatMoney(revisedTotalTax)}, which means you could save approximately ${formatMoney(savings)}. `;
+  } else {
+    para2 += `These strategies can help lower your tax bill. `;
+  }
+  
+  if (opportunitiesCount > 0) {
+    para2 += `We also found ${opportunitiesCount} ${opportunitiesCount === 1 ? "additional opportunity" : "additional opportunities"} that might work for you, but ${opportunitiesCount === 1 ? "it needs" : "they need"} a bit more review to see if ${opportunitiesCount === 1 ? "it's" : "they're"} the right fit.`;
+  } else {
+    para2 += `All the strategies we identified are already included in your savings estimate above.`;
+  }
+  paragraphs.push(para2);
+
+  // Paragraph 3: Next steps / insights
+  let para3 = "";
+  if (appliedCount > 0 && opportunitiesCount > 0) {
+    para3 = `The strategies we've applied are usually the easiest to implement and give you the most benefit for the effort. `;
+    para3 += `The additional opportunities we found might require more planning or upfront costs, but they could provide even bigger savings if they fit your situation. `;
+    para3 += `We recommend reviewing each one with your tax advisor to see which ones make sense for you.`;
+  } else if (appliedCount > 0) {
+    para3 = `These strategies are typically straightforward to implement and can provide real savings. `;
+    para3 += `We recommend discussing them with your tax advisor to make sure everything is set up correctly and to confirm the exact savings you'll see.`;
+  } else if (opportunitiesCount > 0) {
+    para3 = `While we found some potential opportunities, they need a closer look to see if they're right for you. `;
+    para3 += `Some may require upfront costs or specific situations to work well. `;
+    para3 += `We recommend reviewing each one with your tax advisor to understand the costs, benefits, and whether ${opportunitiesCount === 1 ? "it fits" : "they fit"} your goals.`;
+  } else {
+    para3 = `We've reviewed your situation and calculated your tax estimate. `;
+    para3 += `If you'd like to explore additional strategies or have questions about your results, we recommend discussing them with your tax advisor.`;
+  }
+  paragraphs.push(para3);
+
+  return paragraphs;
 }
 
 /* ------------------------------------------------------------------ */

@@ -107,8 +107,8 @@ export function TaxBreakdownTable({ baseline, revised, appliedStrategies = [] }:
   const savings = baseline.totals.totalTax - revised.totals.totalTax;
   const isSavings = savings > 0;
 
-  // Calculate total tax savings (sum of tax savings column)
-  const totalTaxSavings = appliedStrategies.reduce((sum, s) => sum + s.taxSavings, 0);
+  // Use actual total savings (not sum of individual estimates, which don't account for marginal rates and interactions)
+  const totalTaxSavings = savings;
 
   return (
     <div>
