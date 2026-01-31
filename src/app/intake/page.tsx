@@ -440,31 +440,33 @@ router.push("/results");
           )}
         </section>
 
-        <div style={{ display: "flex", gap: spacing.md, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: spacing.md, marginTop: spacing.lg }}>
           <button 
             type="submit" 
             disabled={!canSubmit} 
             style={{
               ...styles.button,
-              fontSize: typography.fontSize.lg,
-              padding: `${spacing.md} ${spacing.xl}`,
+              fontSize: typography.fontSize["2xl"],
+              padding: `${spacing.lg} ${spacing["2xl"]}`,
+              background: "#36a9a2",
               opacity: canSubmit ? 1 : 0.6,
               cursor: canSubmit ? "pointer" : "not-allowed",
+              minWidth: "400px",
             }}
             onMouseEnter={(e) => {
               if (canSubmit) {
-                e.currentTarget.style.background = colors.primaryDark;
+                e.currentTarget.style.background = "#2d8a84";
               }
             }}
             onMouseLeave={(e) => {
               if (canSubmit) {
-                e.currentTarget.style.background = colors.primary;
+                e.currentTarget.style.background = "#36a9a2";
               }
             }}
           >
-            {submitting ? "Analyzing…" : "Get Tax Plan Estimate Now!"}
+            {submitting ? "Analyzing…" : "Get Your Tax Planning Estimate Now!"}
           </button>
-          <span style={{ ...styles.bodyText, fontSize: typography.fontSize.sm }}>
+          <span style={{ ...styles.bodyText, fontSize: typography.fontSize.sm, textAlign: "center" as const }}>
             Results are estimates; final eligibility depends on facts and implementation.
           </span>
         </div>
