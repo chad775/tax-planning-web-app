@@ -388,7 +388,7 @@ router.push("/results");
             Check any strategies you are already using. If 401(k) is checked, we'll ask how much you've contributed YTD.
           </p>
 
-          <div style={{ display: "grid", gap: spacing.md }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: spacing.md }}>
             {STRATEGY_IDS.filter((id) => id !== "s_corp_conversion").map((id) => {
               const checked = form.strategiesInUse.includes(id as any);
               return (
