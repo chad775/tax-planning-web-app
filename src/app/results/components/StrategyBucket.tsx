@@ -276,9 +276,12 @@ export function StrategyBucket({
               : undefined;
           const strategyName = catalogEntry?.uiLabel ?? strategy.strategyId;
           
-          // Prefer narrative explanation, fallback to catalog summary
+          // Use structured description if available, otherwise fallback to narrative or summary
+          const uiDescription = catalogEntry?.uiDescription;
           const narrativeExplanation = strategyExplanations?.get(strategy.strategyId);
-          const strategySummary = narrativeExplanation?.what_it_is ?? catalogEntry?.uiSummary;
+          const strategySummary = uiDescription 
+            ? undefined // Don't show old summary if we have structured description
+            : (narrativeExplanation?.what_it_is ?? catalogEntry?.uiSummary);
 
           const friendlyStatus = getFriendlyStatus(strategy.status);
           const statusColor = getStatusColor(strategy.status);
@@ -341,7 +344,15 @@ export function StrategyBucket({
           return (
             <div key={strategy.strategyId} style={cardStyle}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                <div style={headerStyle}>{strategyName}</div>
+                <div style={headerStyle}>
+                  {uiDescription?.heading ? (
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#111", lineHeight: 1.3 }}>
+                      {uiDescription.heading}
+                    </div>
+                  ) : (
+                    strategyName
+                  )}
+                </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <span
                     style={{
@@ -381,8 +392,42 @@ export function StrategyBucket({
                 </div>
               </div>
 
-              {/* What this is summary - only show if exists */}
-              {strategySummary && <div style={summaryStyle}>{strategySummary}</div>}
+              {/* Structured description or fallback summary */}
+              {uiDescription ? (
+                <div style={{ marginBottom: 16 }}>
+                  {/* What this strategy is */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#333", marginBottom: 4 }}>What this strategy is</div>
+                    <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>{uiDescription.whatThisStrategyIs}</div>
+                  </div>
+                  
+                  {/* How it lowers taxes */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#333", marginBottom: 4 }}>How it lowers taxes</div>
+                    <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>{uiDescription.howItLowersTaxes}</div>
+                  </div>
+                  
+                  {/* Who this usually works best for */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#333", marginBottom: 4 }}>Who this usually works best for</div>
+                    <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>{uiDescription.whoThisUsuallyWorksBestFor}</div>
+                  </div>
+                  
+                  {/* Why this may need confirmation or planning */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#333", marginBottom: 4 }}>Why this may need confirmation or planning</div>
+                    <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>{uiDescription.whyThisMayNeedConfirmationOrPlanning}</div>
+                  </div>
+                  
+                  {/* Typical effort or cost to implement */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#333", marginBottom: 4 }}>Typical effort or cost to implement</div>
+                    <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>{uiDescription.typicalEffortOrCostToImplement}</div>
+                  </div>
+                </div>
+              ) : (
+                strategySummary && <div style={summaryStyle}>{strategySummary}</div>
+              )}
 
               {/* Tier 2: Key numbers section */}
               {tier === 2 && (
