@@ -491,6 +491,9 @@ export async function POST(req: Request) {
 
     /* ---------------- NEW: breakdown fields ---------------- */
 
+    // Extract impacts list early so we can check for s_corp_conversion
+    const impactsList: any[] = Array.isArray((impact as any)?.impacts) ? (impact as any).impacts : [];
+
     const baseline_breakdown = computeTaxBreakdown({
       filingStatus: intake.personal.filing_status,
       state: intake.personal.state,
@@ -510,21 +513,48 @@ export async function POST(req: Request) {
 
     const revisedAgiBase = clampMin0(baselineAgiOverride + revisedBaseDelta);
 
+    // Check if s_corp_conversion is applied to adjust entity type and income
+    const sCorpImpact = impactsList.find((i: any) => 
+      (String(i?.strategyId ?? i?.strategy_id ?? "") === "s_corp_conversion") &&
+      Array.isArray(i?.flags) && i.flags.includes("APPLIED")
+    );
+    
+    let revisedEntityType = intake.business.entity_type;
+    let revisedIncomeW2 = incomeW2;
+    let revisedBusinessProfit = bizProfit;
+    
+    if (sCorpImpact) {
+      // S-corp conversion: entity becomes S_CORP
+      revisedEntityType = "S_CORP";
+      
+      // Find reasonable salary from assumptions
+      const reasonableSalaryAssumption = (sCorpImpact.assumptions || []).find(
+        (a: any) => a.id === "REASONABLE_SALARY"
+      );
+      const reasonableSalary = reasonableSalaryAssumption?.value as number || 0;
+      
+      if (reasonableSalary > 0) {
+        // Add reasonable salary to W-2 wages (subject to FICA)
+        revisedIncomeW2 = incomeW2 + reasonableSalary;
+        // Business profit stays the same (distributions are not subject to SE tax)
+        // Note: For payroll tax calculation, net_profit represents distributions
+        revisedBusinessProfit = bizProfit;
+      }
+    }
+
     const revised_breakdown = computeTaxBreakdown({
       filingStatus: intake.personal.filing_status,
       state: intake.personal.state,
       childrenUnder17: intake.personal.children_0_17 ?? 0,
-      incomeW2,
-      businessProfit: bizProfit,
+      incomeW2: revisedIncomeW2,
+      businessProfit: revisedBusinessProfit,
       k401EmployeeYtd: k401Ytd,
       hasBusiness: intake.business.has_business,
-      entityType: intake.business.entity_type,
+      entityType: revisedEntityType,
       agiOverride: revisedAgiBase,
     });
 
     /* ---------------- NEW: buckets + tier-2 what-if ---------------- */
-
-    const impactsList: any[] = Array.isArray((impact as any)?.impacts) ? (impact as any).impacts : [];
 
     // Build Set of applied strategy IDs from core.appliedStrategyIds OR from flags
     const appliedIds = new Set<string>();
