@@ -8,6 +8,8 @@ import { mapUiToNormalizedIntake } from "../../lib/ui/intakeMapper";
 import type { UiIntakeFormState } from "../../lib/ui/types";
 import { STRATEGY_IDS } from "../../contracts/strategyIds";
 import { colors, typography, spacing, borderRadius, shadows, styles } from "../../lib/ui/designSystem";
+import { STRATEGY_CATALOG } from "../../lib/strategies/strategyCatalog";
+import type { StrategyId } from "../../contracts/strategyIds";
 
 type AnalyzeApiResponse = unknown;
 
@@ -397,7 +399,15 @@ router.push("/results");
                   />
                   <span>
                     <strong style={{ fontSize: typography.fontSize.base, color: colors.textPrimary }}>{labelForStrategy(id)}</strong>
-                    <div style={{ color: colors.textTertiary, fontSize: typography.fontSize.xs, marginTop: spacing.xs }}>{id}</div>
+                    {(() => {
+                      const catalogEntry = STRATEGY_CATALOG[id as StrategyId];
+                      const description = catalogEntry?.uiSummary || catalogEntry?.uiDescription?.whatThisStrategyIs;
+                      return description ? (
+                        <div style={{ color: colors.textSecondary, fontSize: typography.fontSize.sm, marginTop: spacing.xs, lineHeight: typography.lineHeight.normal }}>
+                          {description}
+                        </div>
+                      ) : null;
+                    })()}
                   </span>
                 </label>
               );
@@ -471,9 +481,15 @@ function Field(props: { label: string; issues: string[]; children: React.ReactNo
       </div>
       <div
         style={{
-          ...styles.input,
           border: hasIssues ? `1px solid ${colors.error}` : isFocused ? `1px solid ${colors.primary}` : `1px solid ${colors.border}`,
+          borderRadius: borderRadius.md,
+          padding: `${spacing.sm} ${spacing.md}`,
+          background: colors.surface,
           boxShadow: isFocused && !hasIssues ? `0 0 0 3px ${colors.primaryLight}33` : "none",
+          transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+          minHeight: "40px",
+          display: "flex",
+          alignItems: "center",
         }}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
@@ -506,4 +522,5 @@ const inputStyle: React.CSSProperties = {
   background: "transparent",
   color: colors.textPrimary,
   fontFamily: typography.fontFamily.sans,
+  boxSizing: "border-box" as const,
 };
