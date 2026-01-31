@@ -38,29 +38,13 @@ const ENTITY_TYPE_OPTIONS: Array<{ value: UiIntakeFormState["businessEntityType"
 ];
 
 function labelForStrategy(id: string): string {
-  // simple human labels; we can refine later
-  switch (id) {
-    case "augusta_loophole":
-      return "Augusta Loophole (rent your home to your business)";
-    case "medical_reimbursement":
-      return "Medical Expense Reimbursement Plan";
-    case "hiring_children":
-      return "Hiring Your Children";
-    case "cash_balance_plan":
-      return "Cash Balance Plan";
-    case "k401":
-      return "401(k)";
-    case "leveraged_charitable":
-      return "Leveraged Charitable Giving";
-    case "short_term_rental":
-      return "Short-Term Rental Strategy";
-    case "rtu_program":
-      return "Real Estate Professional / RTU Program";
-    case "film_credits":
-      return "Film Tax Credits";
-    default:
-      return id;
+  // Use strategy catalog for consistent labeling across the app
+  const catalogEntry = STRATEGY_CATALOG[id as StrategyId];
+  if (catalogEntry) {
+    return catalogEntry.uiLabel;
   }
+  // Fallback for any strategies not in catalog
+  return id;
 }
 
 export default function IntakePage() {
@@ -384,7 +368,7 @@ router.push("/results");
 
         <section style={styles.card}>
           <h2 style={styles.heading2}>Strategies already in use</h2>
-          <p style={{ ...styles.bodyText, marginTop: 0 }}>
+          <p style={{ ...styles.bodyText, marginTop: 0, marginBottom: spacing.lg }}>
             Check any strategies you are already using. If 401(k) is checked, we'll ask how much you've contributed YTD.
           </p>
 
