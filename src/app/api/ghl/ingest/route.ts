@@ -2,7 +2,6 @@
 
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { cookies } from "next/headers";
 import {
   GhlClient,
   GhlApiError,
@@ -11,7 +10,7 @@ import {
   type UpsertContactInput,
 } from "@/lib/ghl/client";
 import { buildEmailHtml, buildEmailSubject } from "@/lib/ghl/emailRenderer";
-import { getOrCreateSessionId, setPrefill } from "@/lib/session/prefillStore";
+import { setPrefill } from "@/lib/session/prefillStore";
 
 export const runtime = "nodejs";
 
@@ -24,6 +23,19 @@ type IngestPayload = {
 
   /** Optional: bypass idempotency if true */
   forceResend?: boolean;
+  
+  // GHL webhook payload may include contact object and custom fields
+  contact?: {
+    first_name?: string;
+    firstName?: string;
+    email?: string;
+    phone?: string;
+    phone_number?: string;
+    customFields?: Array<{ name?: string; key?: string; value?: string }>;
+    custom_fields?: Record<string, any>;
+  };
+  customFields?: Array<{ name?: string; key?: string; value?: string }>;
+  custom_fields?: Record<string, any>;
 };
 
 function json(status: number, body: any) {
@@ -56,6 +68,93 @@ function parseTruthyHeader(v: string | null): boolean {
   return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
+/**
+ * Extract correlation token from GHL webhook payload custom fields.
+ * Tolerant to various payload shapes:
+ * - contact.customFields array (name/key/value)
+ * - custom_fields object
+ * - contact.custom_fields
+ * - customFields array at root
+ */
+function extractTokenFromPayload(body: any): string | null {
+  const tokenKey = "tp_session";
+  
+  // Try contact.customFields array
+  if (Array.isArray(body.contact?.customFields)) {
+    for (const field of body.contact.customFields) {
+      const key = field?.key || field?.name;
+      if (key === tokenKey && typeof field?.value === "string") {
+        return field.value.trim() || null;
+      }
+    }
+  }
+  
+  // Try contact.custom_fields object
+  if (isPlainObject(body.contact?.custom_fields)) {
+    const value = body.contact.custom_fields[tokenKey];
+    if (typeof value === "string") {
+      return value.trim() || null;
+    }
+  }
+  
+  // Try root-level customFields array
+  if (Array.isArray(body.customFields)) {
+    for (const field of body.customFields) {
+      const key = field?.key || field?.name;
+      if (key === tokenKey && typeof field?.value === "string") {
+        return field.value.trim() || null;
+      }
+    }
+  }
+  
+  // Try root-level custom_fields object
+  if (isPlainObject(body.custom_fields)) {
+    const value = body.custom_fields[tokenKey];
+    if (typeof value === "string") {
+      return value.trim() || null;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Extract contact fields from GHL webhook payload.
+ * Tolerant to various payload shapes.
+ */
+function extractContactFields(body: any): {
+  firstName?: string;
+  email?: string;
+  phone?: string;
+} {
+  const result: { firstName?: string; email?: string; phone?: string } = {};
+  
+  // Extract firstName
+  const firstName =
+    body.firstName ||
+    body.contact?.first_name ||
+    body.contact?.firstName ||
+    body.first_name;
+  if (typeof firstName === "string" && firstName.trim().length > 0) {
+    result.firstName = firstName.trim();
+  }
+  
+  // Extract email (already normalized in main handler)
+  // This is just for reference - email is extracted separately
+  
+  // Extract phone
+  const phone =
+    body.phone ||
+    body.contact?.phone ||
+    body.contact?.phone_number ||
+    body.phone_number;
+  if (typeof phone === "string" && phone.trim().length > 0) {
+    result.phone = phone.trim();
+  }
+  
+  return result;
+}
+
 export async function POST(req: Request) {
   try {
     const secret = req.headers.get("X-Webhook-Secret");
@@ -73,33 +172,37 @@ export async function POST(req: Request) {
     const email = normalizeEmail(body.email);
     const analysis = body.analysis;
 
+    // Extract correlation token from custom fields (NOT from cookies)
+    const token = extractTokenFromPayload(body);
+    
     // Extract contact fields for prefill (tolerant to various GHL payload shapes)
-    const firstName = typeof body.firstName === "string" && body.firstName.trim().length > 0
-      ? body.firstName.trim()
-      : undefined;
-    const phone = typeof body.phone === "string" && body.phone.trim().length > 0
-      ? body.phone.trim()
-      : undefined;
-
-    // Get or create session ID and store prefill data (if we have any contact info)
-    let sessionId: string | null = null;
-    if (firstName || email || phone) {
+    const contactFields = extractContactFields(body);
+    const { firstName, phone } = contactFields;
+    
+    // Store prefill data keyed by token (if token exists and we have contact info)
+    let hasPrefillData = false;
+    if (token && (firstName || email || phone)) {
       try {
-        const cookieStore = await cookies();
-        sessionId = getOrCreateSessionId(cookieStore);
-        
         // Build prefill data object (only include defined properties)
         const prefillData: { firstName?: string; email?: string; phone?: string } = {};
         if (firstName) prefillData.firstName = firstName;
         if (email) prefillData.email = email;
         if (phone) prefillData.phone = phone;
         
-        // Set prefill data
-        setPrefill(sessionId, prefillData);
+        // Set prefill data keyed by token
+        setPrefill(token, prefillData);
+        hasPrefillData = true;
       } catch (err) {
         // Non-fatal: log but continue
         console.warn("[GHL] Failed to store prefill data:", err);
       }
+    } else if (!token && (firstName || email || phone)) {
+      // Token missing but we have contact data - log warning
+      console.warn("[GHL] Missing tp_session token in webhook payload. Prefill data not stored.", {
+        hasFirstName: !!firstName,
+        hasEmail: !!email,
+        hasPhone: !!phone,
+      });
     }
 
     // Idempotency marker (computed even in log-only mode)
@@ -223,25 +326,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // Ensure session cookie is set in response (if we created one for prefill)
-    const response = json(200, { ok: true });
-    if (sessionId) {
-      const cookieStore = await cookies();
-      const existingCookie = cookieStore.get("tp_session");
-      
-      // Set cookie if it doesn't exist
-      if (!existingCookie) {
-        response.cookies.set("tp_session", sessionId, {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
-          path: "/",
-          maxAge: 60 * 60 * 2, // 2 hours
-        });
-      }
+    // Return response with optional warning if token was missing
+    const responseBody: { ok: true; warning?: string } = { ok: true };
+    if (!token && hasPrefillData) {
+      responseBody.warning = "missing tp_session token";
     }
     
-    return response;
+    return json(200, responseBody);
   } catch (err) {
     console.error("[GHL] Unexpected error:", err);
     return json(500, { ok: false, error: "EMAIL_SEND_FAILED" });
