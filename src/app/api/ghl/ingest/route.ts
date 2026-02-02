@@ -88,12 +88,14 @@ export async function POST(req: Request) {
         const cookieStore = await cookies();
         sessionId = getOrCreateSessionId(cookieStore);
         
+        // Build prefill data object (only include defined properties)
+        const prefillData: { firstName?: string; email?: string; phone?: string } = {};
+        if (firstName) prefillData.firstName = firstName;
+        if (email) prefillData.email = email;
+        if (phone) prefillData.phone = phone;
+        
         // Set prefill data
-        setPrefill(sessionId, {
-          firstName,
-          email: email || undefined,
-          phone,
-        });
+        setPrefill(sessionId, prefillData);
       } catch (err) {
         // Non-fatal: log but continue
         console.warn("[GHL] Failed to store prefill data:", err);
