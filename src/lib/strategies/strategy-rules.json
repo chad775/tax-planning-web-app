@@ -108,9 +108,9 @@
         "rule_group": "g1",
         "field": "business.net_profit",
         "op": "gte",
-        "value": 300000,
+        "value": 200000,
         "required": true,
-        "description": "Business net profit must be at least $300,000"
+        "description": "Business net profit must be at least $200,000"
       },
   
       {

@@ -73,7 +73,7 @@ This document lists all tax strategies and their eligibility requirements.
 **Eligibility Rules (ALL required):**
 - `business.has_business === true`
 - `business.net_profit >= 1` (positive business profit)
-- `business.net_profit >= 300000` (at least $300,000)
+- `business.net_profit >= 200000` (at least $200,000)
 - `business.employees_count <= 5`
 
 **Income Gate:** None (business net profit gate is in eligibility rules)
@@ -132,7 +132,7 @@ This document lists all tax strategies and their eligibility requirements.
 - ✅ 401(k)
 - ✅ Hiring Children
 - ✅ S-Corp Conversion (if net profit ≥ $100k)
-- ✅ Cash Balance Plan (what-if, if net profit ≥ $300k, ≤5 employees)
+- ✅ Cash Balance Plan (what-if, if net profit ≥ $200k, ≤5 employees)
 - ✅ All Tier 2 strategies (what-if only)
 
 ### PARTNERSHIP
@@ -141,7 +141,7 @@ This document lists all tax strategies and their eligibility requirements.
 - ✅ 401(k)
 - ✅ Hiring Children
 - ✅ S-Corp Conversion (if net profit ≥ $100k)
-- ✅ Cash Balance Plan (what-if, if net profit ≥ $300k, ≤5 employees)
+- ✅ Cash Balance Plan (what-if, if net profit ≥ $200k, ≤5 employees)
 - ✅ All Tier 2 strategies (what-if only)
 
 ### S_CORP
@@ -150,7 +150,7 @@ This document lists all tax strategies and their eligibility requirements.
 - ✅ 401(k)
 - ✅ Hiring Children
 - ❌ S-Corp Conversion (already converted)
-- ✅ Cash Balance Plan (what-if, if net profit ≥ $300k, ≤5 employees)
+- ✅ Cash Balance Plan (what-if, if net profit ≥ $200k, ≤5 employees)
 - ✅ All Tier 2 strategies (what-if only)
 
 ### LLC
@@ -159,7 +159,7 @@ This document lists all tax strategies and their eligibility requirements.
 - ✅ 401(k)
 - ✅ Hiring Children
 - ✅ S-Corp Conversion (if net profit ≥ $100k)
-- ✅ Cash Balance Plan (what-if, if net profit ≥ $300k, ≤5 employees)
+- ✅ Cash Balance Plan (what-if, if net profit ≥ $200k, ≤5 employees)
 - ✅ All Tier 2 strategies (what-if only)
 
 ### C_CORP
@@ -168,7 +168,7 @@ This document lists all tax strategies and their eligibility requirements.
 - ✅ 401(k)
 - ✅ Hiring Children
 - ❌ S-Corp Conversion (must convert from SOLE_PROP/PARTNERSHIP/LLC)
-- ✅ Cash Balance Plan (what-if, if net profit ≥ $300k, ≤5 employees)
+- ✅ Cash Balance Plan (what-if, if net profit ≥ $200k, ≤5 employees)
 - ✅ All Tier 2 strategies (what-if only)
 
 ---
