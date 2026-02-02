@@ -595,6 +595,7 @@ export async function POST(req: Request) {
     }, 0);
 
     // Build opportunity_what_if only for tier 2 strategies (what-if only)
+    // Use S-Corp adjusted values if S-Corp conversion is applied (same as revised_breakdown)
     const opportunity_what_if = tier2
       .filter((i: any) => {
         const id = String(i?.strategyId ?? i?.strategy_id ?? "");
@@ -611,11 +612,11 @@ export async function POST(req: Request) {
           filingStatus: intake.personal.filing_status,
           state: intake.personal.state,
           childrenUnder17: intake.personal.children_0_17 ?? 0,
-          incomeW2,
-          businessProfit: bizProfit,
+          incomeW2: revisedIncomeW2, // Use S-Corp adjusted W-2 income
+          businessProfit: revisedBusinessProfit, // Use S-Corp adjusted business profit
           k401EmployeeYtd: k401Ytd,
           hasBusiness: intake.business.has_business,
-          entityType: intake.business.entity_type,
+          entityType: revisedEntityType, // Use S-Corp adjusted entity type
           agiOverride: whatIfAgi,
         });
 
