@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import { cookies } from "next/headers";
 import {
   GhlClient,
   GhlApiError,
@@ -10,6 +11,7 @@ import {
   type UpsertContactInput,
 } from "@/lib/ghl/client";
 import { buildEmailHtml, buildEmailSubject } from "@/lib/ghl/emailRenderer";
+import { getOrCreateSessionId, setPrefill } from "@/lib/session/prefillStore";
 
 export const runtime = "nodejs";
 
@@ -70,6 +72,33 @@ export async function POST(req: Request) {
 
     const email = normalizeEmail(body.email);
     const analysis = body.analysis;
+
+    // Extract contact fields for prefill (tolerant to various GHL payload shapes)
+    const firstName = typeof body.firstName === "string" && body.firstName.trim().length > 0
+      ? body.firstName.trim()
+      : undefined;
+    const phone = typeof body.phone === "string" && body.phone.trim().length > 0
+      ? body.phone.trim()
+      : undefined;
+
+    // Get or create session ID and store prefill data (if we have any contact info)
+    let sessionId: string | null = null;
+    if (firstName || email || phone) {
+      try {
+        const cookieStore = await cookies();
+        sessionId = getOrCreateSessionId(cookieStore);
+        
+        // Set prefill data
+        setPrefill(sessionId, {
+          firstName,
+          email: email || undefined,
+          phone,
+        });
+      } catch (err) {
+        // Non-fatal: log but continue
+        console.warn("[GHL] Failed to store prefill data:", err);
+      }
+    }
 
     // Idempotency marker (computed even in log-only mode)
     const idHash = sha256Hex(`${email}|${JSON.stringify(analysis)}`);
@@ -192,7 +221,25 @@ export async function POST(req: Request) {
       }
     }
 
-    return json(200, { ok: true });
+    // Ensure session cookie is set in response (if we created one for prefill)
+    const response = json(200, { ok: true });
+    if (sessionId) {
+      const cookieStore = await cookies();
+      const existingCookie = cookieStore.get("tp_session");
+      
+      // Set cookie if it doesn't exist
+      if (!existingCookie) {
+        response.cookies.set("tp_session", sessionId, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          path: "/",
+          maxAge: 60 * 60 * 2, // 2 hours
+        });
+      }
+    }
+    
+    return response;
   } catch (err) {
     console.error("[GHL] Unexpected error:", err);
     return json(500, { ok: false, error: "EMAIL_SEND_FAILED" });

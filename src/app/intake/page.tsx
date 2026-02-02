@@ -1,7 +1,7 @@
 // src/app/intake/page.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 import { mapUiToNormalizedIntake } from "../../lib/ui/intakeMapper";
@@ -87,8 +87,68 @@ export default function IntakePage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = useState<Array<{ path: string; message: string }>>([]);
+  
+  // Track if we've already prefilled to avoid overwriting user edits
+  const hasPrefilledRef = useRef(false);
 
   const canSubmit = useMemo(() => !submitting, [submitting]);
+
+  // Fetch and prefill contact data on mount (only once, only if fields are empty)
+  useEffect(() => {
+    // Only prefill once, and only if we haven't already done it
+    if (hasPrefilledRef.current) return;
+    
+    // Only prefill if contact fields are currently empty
+    const hasAnyContactData = 
+      form.contactEmail.trim() !== "" ||
+      form.contactFirstName.trim() !== "" ||
+      form.contactPhone.trim() !== "";
+    
+    if (hasAnyContactData) {
+      // User already has data, don't prefill
+      hasPrefilledRef.current = true;
+      return;
+    }
+
+    // Fetch prefill data
+    fetch("/api/prefill")
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (!data || typeof data !== "object") return;
+        
+        // Only set values if they exist and current fields are empty
+        setForm((prev) => {
+          const updates: Partial<UiIntakeFormState> = {};
+          
+          if (data.firstName && typeof data.firstName === "string" && prev.contactFirstName.trim() === "") {
+            updates.contactFirstName = data.firstName.trim();
+          }
+          
+          if (data.email && typeof data.email === "string" && prev.contactEmail.trim() === "") {
+            updates.contactEmail = data.email.trim();
+          }
+          
+          if (data.phone && typeof data.phone === "string" && prev.contactPhone.trim() === "") {
+            updates.contactPhone = data.phone.trim();
+          }
+          
+          // Only update if we have changes
+          if (Object.keys(updates).length === 0) return prev;
+          
+          return { ...prev, ...updates };
+        });
+        
+        hasPrefilledRef.current = true;
+      })
+      .catch((err) => {
+        // Non-fatal: silently fail
+        console.warn("[INTAKE] Failed to fetch prefill data:", err);
+        hasPrefilledRef.current = true;
+      });
+  }, []); // Empty deps: only run on mount
 
   const issueByPath = useMemo(() => {
     const m = new Map<string, string[]>();
