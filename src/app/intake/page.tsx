@@ -47,6 +47,15 @@ function labelForStrategy(id: string): string {
   return id;
 }
 
+function formatCurrencyInput(value: string | number): string {
+  if (!value && value !== 0) return "";
+  const numStr = String(value).replace(/[^0-9]/g, "");
+  if (!numStr) return "";
+  const num = parseInt(numStr, 10);
+  if (isNaN(num)) return "";
+  return num.toLocaleString("en-US");
+}
+
 export default function IntakePage() {
   const router = useRouter();
 
@@ -292,11 +301,22 @@ router.push("/results");
             >
               <input
                 inputMode="decimal"
-                value={String(form.grossIncome)}
-                onChange={(e) => set("grossIncome", e.target.value)}
+                value={formatCurrencyInput(form.grossIncome)}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, "");
+                  set("grossIncome", raw);
+                }}
+                onBlur={(e) => {
+                  // Format on blur for better UX
+                  const raw = e.target.value.replace(/[^0-9]/g, "");
+                  set("grossIncome", raw);
+                }}
                 style={inputStyle}
                 placeholder="e.g., 350000"
               />
+              <div style={{ fontSize: typography.fontSize.xs, color: colors.textTertiary, marginTop: spacing.xs }}>
+                Total of all W-2s, 1099s, investment income, etc.
+              </div>
             </Field>
           </div>
         </section>
@@ -344,8 +364,16 @@ router.push("/results");
               <Field label="Business net profit" issues={issuesFor("business.net_profit")}>
                 <input
                   inputMode="decimal"
-                  value={String(form.businessNetProfit)}
-                  onChange={(e) => set("businessNetProfit", e.target.value)}
+                  value={formatCurrencyInput(form.businessNetProfit)}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^0-9]/g, "");
+                    set("businessNetProfit", raw);
+                  }}
+                  onBlur={(e) => {
+                    // Format on blur for better UX
+                    const raw = e.target.value.replace(/[^0-9]/g, "");
+                    set("businessNetProfit", raw);
+                  }}
                   style={inputStyle}
                   disabled={!form.hasBusiness}
                   placeholder="e.g., 200000"
@@ -410,8 +438,16 @@ router.push("/results");
                 >
                   <input
                     inputMode="decimal"
-                    value={String(form.k401EmployeeContribYtd)}
-                    onChange={(e) => set("k401EmployeeContribYtd", e.target.value)}
+                    value={formatCurrencyInput(String(form.k401EmployeeContribYtd))}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, "");
+                      set("k401EmployeeContribYtd", raw);
+                    }}
+                    onBlur={(e) => {
+                      // Format on blur for better UX
+                      const raw = e.target.value.replace(/[^0-9]/g, "");
+                      set("k401EmployeeContribYtd", raw);
+                    }}
                     style={inputStyle}
                     placeholder="e.g., 12000"
                   />
