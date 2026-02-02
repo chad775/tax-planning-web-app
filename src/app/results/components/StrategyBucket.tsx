@@ -326,16 +326,11 @@ export function StrategyBucket({
 
           const netSavings = tier === 2 && estimatedCost !== null && taxSavings !== null ? taxSavings - estimatedCost : null;
 
-          // Build advisor-like explanation for why this needs review (8th-grade level, directive, emphasizes advisor need)
+          // Build explanation for why this needs review (8th-grade level, focuses on complexity without being prescriptive)
           const buildWhyNeedsReview = (): string | null => {
-            const requiredItems: string[] = [];
             const reasons: string[] = [];
-            let isInBestInterest = false;
-            let hasCostBenefit = false;
-            let requiresAdvisor = false;
 
             // Check assumptions for specific needs
-            const hasDataGap = strategy.assumptions.some((a) => a.category === "DATA_GAP");
             const requiresCostBenefitReview = strategy.assumptions.some((a) => a.id === "REQUIRES_COST_BENEFIT_REVIEW");
             const requiresPlanDesign = strategy.assumptions.some((a) => a.id === "REQUIRES_PLAN_DESIGN");
             const requiresProgramSpecs = strategy.assumptions.some((a) => a.id === "REQUIRES_PROGRAM_SPECIFICS");
@@ -353,59 +348,37 @@ export function StrategyBucket({
             const isNotEligible = strategy.status === "NOT_ELIGIBLE";
             const isPotential = strategy.status === "POTENTIAL";
 
-            // Build explanation based on specific needs - directive language
+            // Build explanation based on specific needs - focus on complexity and requirements
             if (requiresCostBenefitReview) {
-              reasons.push("To take this deduction, you need a professional review of the costs versus benefits to ensure it makes financial sense.");
-              requiredItems.push("upfront investment amount and ongoing costs");
-              hasCostBenefit = true;
-              requiresAdvisor = true;
+              reasons.push("This requires a detailed cost-benefit analysis, including upfront investment amounts, ongoing costs, and projected returns to ensure it makes financial sense.");
             }
 
             if (requiresPlanDesign) {
-              reasons.push("To take this deduction, you need a retirement plan that's professionally designed and approved by the IRS.");
-              requiredItems.push("a properly designed retirement plan");
-              isInBestInterest = true;
-              requiresAdvisor = true;
+              reasons.push("This requires an IRS-approved retirement plan that must be professionally designed, documented, and maintained according to federal regulations.");
             }
 
             if (requiresProgramSpecs) {
-              reasons.push("To take this deduction, you need to review the specific program details with a tax advisor to confirm it's a good fit.");
-              requiredItems.push("program details and current terms");
-              hasCostBenefit = true;
-              requiresAdvisor = true;
+              reasons.push("This requires reviewing specific program terms, investment structures, and current IRS treatment to confirm eligibility and proper documentation.");
             }
 
             if (requiresPropertyFacts) {
-              reasons.push("To take this deduction, you need proper documentation of the property purchase and your participation level.");
-              requiredItems.push("property purchase price, location, and participation documentation");
-              isInBestInterest = true;
-              requiresAdvisor = true;
+              reasons.push("This requires detailed documentation of the property purchase price, location, your participation level, and ongoing management activities to meet IRS requirements.");
             }
 
             if (requiresPayrollSetup || requiresReasonableSalary) {
-              reasons.push("To take this deduction, you need to set up payroll and have a tax advisor determine a reasonable salary amount.");
-              requiredItems.push("payroll setup and reasonable salary determination");
-              isInBestInterest = true;
-              requiresAdvisor = true;
+              reasons.push("This requires setting up formal payroll systems and determining a reasonable salary amount that meets IRS guidelines based on your role and industry standards.");
             }
 
             if (needsWageSubstantiation) {
-              reasons.push("To take this deduction, you need proper documentation of wages paid and proof of work performed.");
-              requiredItems.push("wage documentation and proof of work");
-              isInBestInterest = true;
-              requiresAdvisor = true;
+              reasons.push("This requires proper documentation of wages paid, job descriptions, work performed, and time records to substantiate the deduction.");
             }
 
             if (requiresPlanSubstantiation) {
-              reasons.push("To take this deduction, you need a properly set up medical reimbursement plan with good record keeping.");
-              requiredItems.push("a formal medical reimbursement plan and expense records");
-              isInBestInterest = true;
-              requiresAdvisor = true;
+              reasons.push("This requires establishing a formal medical reimbursement plan with proper documentation, expense tracking, and compliance with IRS plan requirements.");
             }
 
             if (incomeGateNotMet && incomeGateValue) {
-              reasons.push(`This strategy typically requires taxable income of at least ${formatMoney(incomeGateValue)} to be effective. Your current income is below that threshold.`);
-              isInBestInterest = false;
+              reasons.push(`This strategy typically works best when taxable income is at least ${formatMoney(incomeGateValue)}. Your current income is below that threshold.`);
             }
 
             if (isCappedByIncome) {
@@ -416,7 +389,6 @@ export function StrategyBucket({
               const remainingRoom = getAssumptionNumber(strategy.assumptions, "ALREADY_IN_USE_REMAINING_ROOM");
               if (remainingRoom && remainingRoom > 0) {
                 reasons.push(`You're already using this strategy, but you could contribute up to ${formatMoney(remainingRoom)} more to maximize your savings.`);
-                isInBestInterest = true;
               } else {
                 reasons.push("You're already using this strategy at the maximum level, so there's no additional savings available.");
               }
@@ -430,33 +402,17 @@ export function StrategyBucket({
                 reasons.push("Based on your current situation, you don't meet the requirements for this strategy right now.");
               }
             } else if (isPotential) {
-              reasons.push("This might work for you, but it requires additional review and proper setup to take the deduction.");
-              requiresAdvisor = true;
+              reasons.push("This might work for you, but it requires additional review of your specific situation and proper setup to take the deduction.");
             }
 
             if (strategy.needsConfirmation && reasons.length === 0) {
-              reasons.push("To take this deduction, you need to verify details and ensure proper implementation.");
-              requiresAdvisor = true;
+              reasons.push("This requires verifying specific details about your situation and ensuring proper implementation to take the deduction.");
             }
 
             // Build the final explanation
             if (reasons.length === 0) return null;
 
-            let explanation = reasons.join(" ");
-
-            // Add required items list
-            if (requiredItems.length > 0) {
-              explanation += ` To move forward, you'll need: ${requiredItems.join(", ")}.`;
-            }
-
-            // Emphasize advisor requirement
-            if (requiresAdvisor || requiredItems.length > 0) {
-              explanation += " These deductions require proper setup and documentation, which is best handled with a tax advisor to ensure everything is done correctly and to maximize your savings.";
-            } else if (isInBestInterest && !isNotEligible) {
-              explanation += " We recommend working with a tax advisor to ensure proper implementation and to confirm the exact savings you'll see.";
-            }
-
-            return explanation;
+            return reasons.join(" ");
           };
 
           const whyNeedsReview = buildWhyNeedsReview();
