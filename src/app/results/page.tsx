@@ -230,6 +230,7 @@ export default function ResultsPage() {
                   description="Each strategy is calculated independently (not combined with other Tier 2 strategies)."
                   whatIfMap={vm.whatIfMap}
                   baselineBreakdown={vm.baselineBreakdown}
+                  revisedBreakdown={vm.revisedBreakdown}
                   strategyExplanations={vm.strategyExplanations}
                 />
               </div>

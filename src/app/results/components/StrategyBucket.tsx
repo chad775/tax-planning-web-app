@@ -46,6 +46,7 @@ type StrategyBucketProps = {
   description?: string;
   whatIfMap?: Map<string, WhatIfScenarioData>;
   baselineBreakdown?: TaxBreakdown | null;
+  revisedBreakdown?: TaxBreakdown | null;
   strategyExplanations?: Map<string, { what_it_is: string; why_it_applies_or_not: string }>;
 };
 
@@ -134,6 +135,7 @@ export function StrategyBucket({
   description,
   whatIfMap,
   baselineBreakdown,
+  revisedBreakdown,
   strategyExplanations,
 }: StrategyBucketProps) {
   const formatIncomeReduction = (range: { low: number; base: number; high: number } | null): string => {
@@ -313,10 +315,12 @@ export function StrategyBucket({
 
           if (tier === 2) {
             const whatIf = whatIfMap?.get(strategy.strategyId);
-            if (whatIf && baselineBreakdown) {
+            if (whatIf && revisedBreakdown) {
               hasWhatIfData = true;
               deductionAmount = Math.abs(whatIf.taxableIncomeDeltaBase);
-              taxSavings = Math.max(0, baselineBreakdown.totals.totalTax - whatIf.totals.totalTax);
+              // For Tier 2 strategies, compare revised (Tier 1 only) to what-if (Tier 1 + Tier 2)
+              // This gives us the tax savings for JUST the Tier 2 strategy
+              taxSavings = Math.max(0, revisedBreakdown.totals.totalTax - whatIf.totals.totalTax);
             } else if (strategy.taxableIncomeDelta !== null) {
               // Fallback to strategy delta if what-if not available
               deductionAmount = Math.abs(strategy.taxableIncomeDelta.base);
