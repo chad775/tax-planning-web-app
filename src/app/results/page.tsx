@@ -489,19 +489,22 @@ function buildEnhancedExecutiveSummary(vm: ResultsViewModel | null, raw: JsonRec
   // Paragraph 3: Next steps / insights
   let para3 = "";
   if (appliedCount > 0 && opportunitiesCount > 0) {
-    para3 = `The strategies we've applied are usually the easiest to implement and give you the most benefit for the effort. `;
-    para3 += `The additional opportunities we found might require more planning or upfront costs, but they could provide even bigger savings if they fit your situation. `;
-    para3 += `We recommend reviewing each one with your tax advisor to see which ones make sense for you.`;
+    para3 = `The strategies we've applied still require proper setup, documentation, and compliance with IRS rules to work correctly. `;
+    para3 += `The additional opportunities we found are even more complex—they often involve significant upfront investments, detailed plan design, ongoing compliance requirements, and careful cost-benefit analysis. `;
+    para3 += `Each one has specific eligibility criteria, documentation requirements, and IRS regulations that must be followed precisely to avoid issues. `;
+    para3 += `Getting these right requires understanding the technical details, ensuring proper implementation, and maintaining compliance over time.`;
   } else if (appliedCount > 0) {
-    para3 = `These strategies are typically straightforward to implement and can provide real savings. `;
-    para3 += `We recommend discussing them with your tax advisor to make sure everything is set up correctly and to confirm the exact savings you'll see.`;
+    para3 = `While these strategies can provide real savings, they're not simple to implement correctly. `;
+    para3 += `Each one requires proper setup, detailed documentation, compliance with IRS regulations, and often involves plan design, payroll setup, or other technical requirements. `;
+    para3 += `The exact savings depend on getting all the details right—proper substantiation, meeting eligibility criteria, and ensuring everything is structured correctly according to tax law.`;
   } else if (opportunitiesCount > 0) {
-    para3 = `While we found some potential opportunities, they need a closer look to see if they're right for you. `;
-    para3 += `Some may require upfront costs or specific situations to work well. `;
-    para3 += `We recommend reviewing each one with your tax advisor to understand the costs, benefits, and whether ${opportunitiesCount === 1 ? "it fits" : "they fit"} your goals.`;
+    para3 = `The opportunities we found are complex strategies that require significant planning and careful execution. `;
+    para3 += `They typically involve large upfront investments, detailed plan design, ongoing compliance requirements, and specific documentation that must meet IRS standards. `;
+    para3 += `Each strategy has intricate eligibility rules, cost-benefit considerations, and regulatory requirements that need to be carefully evaluated and properly implemented. `;
+    para3 += `Getting these strategies right requires deep understanding of tax law, proper structuring, and meticulous attention to compliance details.`;
   } else {
     para3 = `We've reviewed your situation and calculated your tax estimate. `;
-    para3 += `If you'd like to explore additional strategies or have questions about your results, we recommend discussing them with your tax advisor.`;
+    para3 += `If you'd like to explore additional strategies, keep in mind that most tax planning strategies require proper setup, detailed documentation, and compliance with complex IRS regulations to be effective.`;
   }
   paragraphs.push(para3);
 
