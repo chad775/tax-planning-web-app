@@ -27,11 +27,13 @@ export async function GET(request: Request) {
       maxAge: 60 * 60, // 1 hour
     });
 
-    // Redirect to /intake (no query params)
-    return NextResponse.redirect(new URL("/intake", request.url), 302);
+    // Redirect to /intake with prefill flag
+    const intakeUrl = new URL("/intake", request.url);
+    intakeUrl.searchParams.set("prefill", "1");
+    return NextResponse.redirect(intakeUrl, 302);
   } catch (err) {
     console.error("[INTAKE-BRIDGE] Error:", err);
-    // On error, still redirect to /intake (graceful degradation)
+    // On error, redirect to /intake without prefill flag (graceful degradation)
     return NextResponse.redirect(new URL("/intake", request.url), 302);
   }
 }

@@ -114,6 +114,29 @@ export class GhlClient {
     );
   }
 
+  /**
+   * Search contacts by custom field value.
+   * Returns contacts where the specified custom field matches the value.
+   */
+  async searchContactsByCustomField(fieldKey: string, fieldValue: string): Promise<Json> {
+    // GHL search API: POST to /contacts/search with query filter
+    const payload: Json = {
+      locationId: this.locationId,
+      query: {
+        customFields: {
+          [fieldKey]: fieldValue,
+        },
+      },
+      limit: 10, // Only need one match, but allow a few for safety
+    };
+
+    return this.request<Json>(
+      "POST",
+      "https://services.leadconnectorhq.com/contacts/search",
+      payload
+    );
+  }
+
   async addTags(contactId: string, tags: string[]): Promise<Json> {
     return this.request<Json>(
       "POST",
