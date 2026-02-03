@@ -90,22 +90,22 @@ function findCustomFieldValue(contact: any, fieldKey: string): string | null {
 
 export async function GET() {
   try {
-    // Read tp_session cookie
+    // Read tp_session cookie (NOT from query params)
     const cookieStore = await cookies();
-    const sessionToken = cookieStore.get("tp_session")?.value;
+    const token = cookieStore.get("tp_session")?.value?.trim();
 
-    if (!sessionToken || sessionToken.trim().length === 0) {
-      return NextResponse.json({ ok: false, reason: "NO_SESSION" }, { status: 200 });
+    if (!token || token.length === 0) {
+      return NextResponse.json({ ok: false, reason: "NO_SESSION" }, { status: 401 });
     }
 
-    // Initialize GHL client
+    // Validate required env vars (do NOT guess names - use existing patterns)
     const apiKey = process.env.GHL_API_KEY;
     const locationId = process.env.GHL_LOCATION_ID || "7uY97QKanoXhxDGNwDIa";
     const baseUrl = process.env.GHL_BASE_URL || "https://services.leadconnectorhq.com";
 
-    if (!apiKey) {
-      console.error("[PREFILL] Missing GHL_API_KEY");
-      return NextResponse.json({ ok: false, reason: "ERROR" }, { status: 200 });
+    if (!apiKey || apiKey.trim().length === 0) {
+      console.error("[PREFILL] Missing GHL_API_KEY env var");
+      return NextResponse.json({ ok: false, reason: "MISSING_ENV" }, { status: 500 });
     }
 
     const ghl = new GhlClient({
@@ -118,22 +118,29 @@ export async function GET() {
     // Search for contact by tp_session custom field
     let searchResult;
     try {
-      searchResult = await ghl.searchContactsByCustomField("tp_session", sessionToken.trim());
+      searchResult = await ghl.searchContactsByCustomField("tp_session", token);
     } catch (err) {
+      // GHL fetch failure - return precise error code
       if (err instanceof GhlApiError) {
-        console.error("[PREFILL] GHL search failed:", err.status, err.bodyText);
+        const bodySnippet = err.bodyText ? err.bodyText.substring(0, 200) : "";
+        console.error("[PREFILL] GHL fetch failed", {
+          status: err.status,
+          bodySnippet,
+          hasToken: !!token,
+        });
+        return NextResponse.json({ ok: false, reason: "GHL_FETCH_FAILED" }, { status: 502 });
       } else {
-        console.error("[PREFILL] GHL search error:", err);
+        console.error("[PREFILL] GHL fetch error", { error: err, hasToken: !!token });
+        return NextResponse.json({ ok: false, reason: "GHL_FETCH_FAILED" }, { status: 502 });
       }
-      return NextResponse.json({ ok: false, reason: "ERROR" }, { status: 200 });
     }
 
     // Extract contact from search result
     // GHL search typically returns { contacts: [...] } or { data: { contacts: [...] } }
     const contacts = searchResult?.contacts || searchResult?.data?.contacts || [];
     if (!Array.isArray(contacts) || contacts.length === 0) {
-      // No contact found with this token
-      return NextResponse.json({ ok: false, reason: "NO_SESSION" }, { status: 200 });
+      // No contact found with this token - return ok:true with prefill:null
+      return NextResponse.json({ ok: true, prefill: null }, { status: 200 });
     }
 
     // Use the first matching contact
@@ -142,11 +149,13 @@ export async function GET() {
 
     // Verify the token matches (double-check)
     const tokenInContact = findCustomFieldValue(contact, "tp_session");
-    if (tokenInContact !== sessionToken.trim()) {
-      console.warn("[PREFILL] Token mismatch in contact data");
-      return NextResponse.json({ ok: false, reason: "ERROR" }, { status: 200 });
+    if (tokenInContact !== token) {
+      console.warn("[PREFILL] Token mismatch in contact data", { hasToken: !!token });
+      // Still return ok:true with prefill:null since we found a contact but token doesn't match
+      return NextResponse.json({ ok: true, prefill: null }, { status: 200 });
     }
 
+    // Return prefill data
     return NextResponse.json(
       {
         ok: true,
@@ -159,7 +168,8 @@ export async function GET() {
       { status: 200 }
     );
   } catch (err) {
-    console.error("[PREFILL] Unexpected error:", err);
-    return NextResponse.json({ ok: false, reason: "ERROR" }, { status: 200 });
+    // Unhandled error - log with context, never expose secrets
+    console.error("[PREFILL] Unhandled error", err);
+    return NextResponse.json({ ok: false, reason: "UNHANDLED" }, { status: 500 });
   }
 }
