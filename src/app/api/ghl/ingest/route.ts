@@ -77,6 +77,11 @@ function parseTruthyHeader(v: string | null): boolean {
  * - customFields array at root
  */
 function extractTokenFromPayload(body: any): string | null {
+  // FAST-PATH: Check top-level tp_session first
+  if (typeof body?.tp_session === "string") {
+    return body.tp_session.trim() || null;
+  }
+  
   const tokenKey = "tp_session";
   
   // Try contact.customFields array
