@@ -144,8 +144,13 @@ function extractContactFields(body: any): {
     result.firstName = firstName.trim();
   }
   
-  // Extract email (already normalized in main handler)
-  // This is just for reference - email is extracted separately
+  // Extract email from various locations
+  const email =
+    body.email ||
+    body.contact?.email;
+  if (typeof email === "string" && email.trim().length > 0) {
+    result.email = email.trim();
+  }
   
   // Extract phone
   const phone =
@@ -170,45 +175,48 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json().catch(() => null)) as IngestPayload | null;
-    if (!body || typeof body.email !== "string" || !isPlainObject(body.analysis)) {
+    if (!body) {
       return json(400, { ok: false, error: "INVALID_PAYLOAD" });
     }
 
-    const email = normalizeEmail(body.email);
-    const analysis = body.analysis;
-
-    // Extract correlation token from custom fields (NOT from cookies)
+    // Extract correlation token and contact fields early (before analysis check)
     const token = extractTokenFromPayload(body);
-    
-    // Extract contact fields for prefill (tolerant to various GHL payload shapes)
     const contactFields = extractContactFields(body);
-    const { firstName, phone } = contactFields;
-    
-    // Store prefill data keyed by token (if token exists and we have contact info)
-    let hasPrefillData = false;
+    const { firstName, email: emailRaw, phone } = contactFields;
+    const email = emailRaw ? normalizeEmail(emailRaw) : undefined;
+
+    // Store prefill data if token exists and we have contact info (even without analysis)
     if (token && (firstName || email || phone)) {
       try {
-        // Build prefill data object (only include defined properties)
         const prefillData: { firstName?: string; email?: string; phone?: string } = {};
         if (firstName) prefillData.firstName = firstName;
         if (email) prefillData.email = email;
         if (phone) prefillData.phone = phone;
         
-        // Set prefill data keyed by token
         setPrefill(token, prefillData);
-        hasPrefillData = true;
+        console.log("[GHL] prefill stored", {
+          hasToken: true,
+          hasEmail: !!email,
+          hasFirstName: !!firstName,
+          hasPhone: !!phone,
+        });
       } catch (err) {
-        // Non-fatal: log but continue
         console.warn("[GHL] Failed to store prefill data:", err);
       }
-    } else if (!token && (firstName || email || phone)) {
-      // Token missing but we have contact data - log warning
-      console.warn("[GHL] Missing tp_session token in webhook payload. Prefill data not stored.", {
-        hasFirstName: !!firstName,
-        hasEmail: !!email,
-        hasPhone: !!phone,
-      });
     }
+
+    // Check if analysis exists - if not, return early as prefill-only webhook
+    const hasAnalysis = isPlainObject(body.analysis);
+    if (!hasAnalysis) {
+      return json(200, { ok: true, prefillOnly: true });
+    }
+
+    // Continue with analysis email flow - require email for this path
+    if (!email || typeof email !== "string") {
+      return json(400, { ok: false, error: "INVALID_PAYLOAD" });
+    }
+
+    const analysis = body.analysis;
 
     // Idempotency marker (computed even in log-only mode)
     const idHash = sha256Hex(`${email}|${JSON.stringify(analysis)}`);
@@ -331,13 +339,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Return response with optional warning if token was missing
-    const responseBody: { ok: true; warning?: string } = { ok: true };
-    if (!token && hasPrefillData) {
-      responseBody.warning = "missing tp_session token";
-    }
-    
-    return json(200, responseBody);
+    return json(200, { ok: true });
   } catch (err) {
     console.error("[GHL] Unexpected error:", err);
     return json(500, { ok: false, error: "EMAIL_SEND_FAILED" });
