@@ -1,8 +1,8 @@
 // src/app/intake/page.tsx
 "use client";
 
-import React, { useMemo, useState, useEffect, useRef, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import React, { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 import { mapUiToNormalizedIntake } from "../../lib/ui/intakeMapper";
 import type { UiIntakeFormState } from "../../lib/ui/types";
@@ -56,9 +56,8 @@ function formatCurrencyInput(value: string | number): string {
   return num.toLocaleString("en-US");
 }
 
-function IntakePageContent() {
+export default function IntakePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [form, setForm] = useState<UiIntakeFormState>({
     // Contact
@@ -91,14 +90,8 @@ function IntakePageContent() {
   
   const canSubmit = useMemo(() => !submitting, [submitting]);
 
-  // Fetch and prefill contact data from GHL when prefill=1 query param is present
+  // Fetch and prefill contact data from GHL on mount (only if fields are empty)
   useEffect(() => {
-    const prefillFlag = searchParams.get("prefill");
-    if (prefillFlag !== "1") {
-      // No prefill flag, skip
-      return;
-    }
-
     // Check if form fields are already populated
     const hasAnyContactData =
       form.contactEmail.trim() !== "" ||
@@ -106,24 +99,18 @@ function IntakePageContent() {
       form.contactPhone.trim() !== "";
 
     if (hasAnyContactData) {
-      // User already has data, clean up URL and skip prefill
-      const url = new URL(window.location.href);
-      url.searchParams.delete("prefill");
-      window.history.replaceState({}, "", url.toString());
+      // User already has data, skip prefill
       return;
     }
 
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/intake/prefill", { credentials: "include" });
+        const res = await fetch("/api/prefill", {
+          method: "GET",
+          cache: "no-store",
+        });
         if (!res.ok) {
-          // Clean up URL even on error
-          if (!cancelled) {
-            const url = new URL(window.location.href);
-            url.searchParams.delete("prefill");
-            window.history.replaceState({}, "", url.toString());
-          }
           return;
         }
 
@@ -139,27 +126,14 @@ function IntakePageContent() {
             contactPhone: prev.contactPhone || data.prefill.phone || "",
           }));
         }
-
-        // Clean up URL after successful prefill attempt
-        if (!cancelled) {
-          const url = new URL(window.location.href);
-          url.searchParams.delete("prefill");
-          window.history.replaceState({}, "", url.toString());
-        }
       } catch {
         // Silent fail - prefill is non-critical
-        // Clean up URL on error
-        if (!cancelled) {
-          const url = new URL(window.location.href);
-          url.searchParams.delete("prefill");
-          window.history.replaceState({}, "", url.toString());
-        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [searchParams, form.contactEmail, form.contactFirstName, form.contactPhone]);
+  }, []); // Only run once on mount
 
   const issueByPath = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -566,13 +540,6 @@ router.push("/results");
   );
 }
 
-export default function IntakePage() {
-  return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <IntakePageContent />
-    </Suspense>
-  );
-}
 
 function Field(props: { label: string; issues: string[]; children: React.ReactNode }) {
   const hasIssues = props.issues.length > 0;
