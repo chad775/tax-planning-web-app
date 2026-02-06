@@ -163,7 +163,9 @@ export class GhlClient {
   /**
    * Send an email via Conversations Messages API.
    *
-   * Sends both plain-text and HTML bodies when text is provided (multipart-friendly).
+   * Sends HTML in the `html` field (rendered as HTML in inbox clients) and plain text in `message`
+   * (required by GHL; used as fallback). When `text` is provided, it is used for `message`;
+   * otherwise plain text is derived by stripping HTML.
    * Critical details (learned empirically):
    * - GHL requires a non-empty plain-text `message`
    * - HTML alone is NOT sufficient

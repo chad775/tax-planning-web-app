@@ -205,8 +205,20 @@ export async function POST(req: Request) {
       }
     }
 
-    // Check if analysis exists - if not, return early as prefill-only webhook
-    const hasAnalysis = isPlainObject(body.analysis);
+    // Unwrap analysis from common webhook/API envelopes so email renderer gets baseline/after/strategies
+    const result = body as Record<string, unknown>;
+    const analysisForEmail: Record<string, unknown> | null =
+      result && typeof result === "object" && result.analysis && typeof result.analysis === "object"
+        ? (result.analysis as Record<string, unknown>)
+        : result && typeof result === "object" && (result as any).data?.analysis && typeof (result as any).data.analysis === "object"
+          ? ((result as any).data.analysis as Record<string, unknown>)
+          : result && typeof result === "object" && (result as any).payload?.analysis && typeof (result as any).payload.analysis === "object"
+            ? ((result as any).payload.analysis as Record<string, unknown>)
+            : result && typeof result === "object" && result.result && typeof result.result === "object"
+              ? (result.result as Record<string, unknown>)
+              : (result as Record<string, unknown>);
+
+    const hasAnalysis = isPlainObject(analysisForEmail);
     if (!hasAnalysis) {
       return json(200, { ok: true, prefillOnly: true });
     }
@@ -216,10 +228,8 @@ export async function POST(req: Request) {
       return json(400, { ok: false, error: "INVALID_PAYLOAD" });
     }
 
-    const analysis = body.analysis;
-
     // Idempotency marker (computed even in log-only mode)
-    const idHash = sha256Hex(`${email}|${JSON.stringify(analysis)}`);
+    const idHash = sha256Hex(`${email}|${JSON.stringify(analysisForEmail)}`);
     const markerTag = `taxapp_sent_${idHash.slice(0, 16)}`;
 
     // Resend override (header OR body)
@@ -229,13 +239,12 @@ export async function POST(req: Request) {
     // LOG ONLY: validate/auth/idempotency marker calculation, but no external side effects.
     if (isLogOnlyEnabled()) {
       console.log("[GHL][LOG_ONLY] ingest accepted", {
-        email,
         markerTag,
         forceResend,
         tags: Array.isArray(body.tags) ? body.tags : [],
         hasFirstName: typeof body.firstName === "string" && body.firstName.trim().length > 0,
         hasPhone: typeof body.phone === "string" && body.phone.trim().length > 0,
-        analysisKeys: Object.keys(analysis ?? {}).slice(0, 50),
+        analysisKeys: Object.keys(analysisForEmail ?? {}).slice(0, 50),
       });
       return json(200, { ok: true, logOnly: true });
     }
@@ -299,9 +308,21 @@ export async function POST(req: Request) {
     /* -------------------------------------------------
        3) Build email
        ------------------------------------------------- */
-    const subject = buildEmailSubject(email, analysis);
-    const html = buildEmailHtml(analysis);
-    const text = buildEmailText(analysis);
+    console.log("EMAIL_ANALYSIS_SHAPE", {
+      topLevelKeys: analysisForEmail && typeof analysisForEmail === "object" ? Object.keys(analysisForEmail).slice(0, 30) : [],
+      hasBaseline: !!analysisForEmail?.baseline,
+      hasAfter: !!analysisForEmail?.after,
+      hasDelta: !!analysisForEmail?.delta,
+      strategiesType: Array.isArray(analysisForEmail?.strategies) ? "array" : typeof analysisForEmail?.strategies,
+      strategiesLen: Array.isArray(analysisForEmail?.strategies) ? analysisForEmail.strategies.length : null,
+      baselineKeys: analysisForEmail?.baseline ? Object.keys(analysisForEmail.baseline).slice(0, 20) : [],
+      afterKeys: analysisForEmail?.after ? Object.keys(analysisForEmail.after).slice(0, 20) : [],
+    });
+
+    const subject = buildEmailSubject(email, analysisForEmail);
+    const html = buildEmailHtml(analysisForEmail);
+    const text = buildEmailText(analysisForEmail);
+    console.log("EMAIL_BODY_LENGTHS", { subjectLen: subject.length, htmlLen: html.length, textLen: text.length });
 
     /* -------------------------------------------------
        4) Send email
