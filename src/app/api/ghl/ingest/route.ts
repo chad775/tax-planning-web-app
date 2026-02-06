@@ -60,6 +60,7 @@ const MAX_ANALYSIS_VISIT = 2000;
 /**
  * Score a candidate object for "looks like the analysis result" (baseline/after/strategies).
  * Higher = more likely to be the node to pass to the email renderer.
+ * Prefer root when it has baseline_breakdown + revised_breakdown (includes S-Corp and full totals).
  */
 function scoreAnalysisCandidate(obj: unknown): number {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return 0;
@@ -71,6 +72,9 @@ function scoreAnalysisCandidate(obj: unknown): number {
   if (o.intake != null) s += 3;
   if (o.delta != null) s += 2;
   if (o.savings != null) s += 2;
+  // Prefer full payload that has breakdown blocks (revised_breakdown includes S-Corp payroll savings)
+  if (o.baseline_breakdown != null) s += 5;
+  if (o.revised_breakdown != null) s += 5;
   const keys = Object.keys(o);
   if (keys.some((k) => k === "request_id" || k === "created_at_iso")) s += 1;
   return s;
