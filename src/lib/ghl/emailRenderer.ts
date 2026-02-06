@@ -5,6 +5,47 @@ type Json = Record<string, any>;
 /** Set to true to include the raw analysis JSON block in the email (default off for WOW-ready emails). */
 const INCLUDE_RAW_JSON = false;
 
+/** Set to true to include strategy tables (Applied/Potential); default off for advisor-grade email. */
+const INCLUDE_TABLES = false;
+
+/** Advisor-style one-liners per strategy id (no new dependencies). */
+const STRATEGY_ONE_LINERS: Record<string, string> = {
+  s_corp_conversion:
+    "Often reduces self-employment tax exposure when structured correctly.",
+  cash_balance_plan:
+    "Can allow significantly higher retirement contributions than a standard 401(k), depending on age and income.",
+  k401:
+    "Maximizes retirement deferral opportunities for business owners and spouses when applicable.",
+  augusta_loophole:
+    "May allow tax-favored reimbursement for qualifying home office rental days when documented properly.",
+  hiring_children:
+    "Can shift income to family members for legitimate work and potentially reduce overall tax burden.",
+  medical_reimbursement:
+    "May allow tax-advantaged reimbursement of qualifying medical costs under the right plan structure.",
+  short_term_rental:
+    "Under certain rules, can create tax-favored deductions tied to active participation.",
+  film_credits:
+    "Certain state programs may provide credits if you qualify and file properly.",
+  leveraged_charitable:
+    "Advanced charitable structures may increase deduction efficiency for the right taxpayers.",
+  rtu_program:
+    "Certain state incentives may apply depending on industry and filings.",
+};
+
+/** Human-readable strategy names when payload has no name/title (presentation only). */
+const STRATEGY_DISPLAY_NAMES: Record<string, string> = {
+  s_corp_conversion: "S-Corp conversion",
+  cash_balance_plan: "Cash balance plan",
+  k401: "401(k)",
+  augusta_loophole: "Augusta loophole",
+  hiring_children: "Hiring children",
+  medical_reimbursement: "Medical reimbursement",
+  short_term_rental: "Short-term rental",
+  film_credits: "Film credits",
+  leveraged_charitable: "Leveraged charitable",
+  rtu_program: "RTU program",
+};
+
 function asString(v: unknown): string | null {
   return typeof v === "string" && v.trim().length ? v.trim() : null;
 }
@@ -187,7 +228,10 @@ export function buildEmailHtml(analysis: Json): string {
     get(analysis, "business.has_business") ??
     get(analysis, "business.hasBusiness");
   const bizType =
-    asString(get(analysis, "intake.business.type")) ?? asString(get(analysis, "business.type"));
+    asString(get(analysis, "intake.business.entity_type")) ??
+    asString(get(analysis, "intake.business.type")) ??
+    asString(get(analysis, "business.entity_type")) ??
+    asString(get(analysis, "business.type"));
 
   const strategies =
     get(analysis, "strategies") ??
@@ -229,60 +273,123 @@ export function buildEmailHtml(analysis: Json): string {
 
   const firstName = inferName(analysis);
   const strategyData = renderStrategiesAndTopOpportunities(strategies);
+  const topOpp = strategyData.topOpps[0];
+  const curated = getCuratedStrategies(strategyData);
 
-  // Hero line
-  let heroLine = "Summary of your results.";
+  // Advisor opening paragraph
+  const openingParagraph =
+    "Based on the information you provided, we ran an initial tax planning review to identify areas where you may be overpaying and where proactive planning could reduce your overall tax burden.";
+
+  // Hero: title + value (or "Initial results summary" with no value line)
+  let heroTitle = "";
+  let heroValueLine = "";
   if (delta != null && delta < 0) {
-    heroLine = `Estimated annual tax savings: ${formatUsd0(Math.abs(delta))}`;
+    heroTitle = "Estimated annual tax savings";
+    heroValueLine = formatUsd0(Math.abs(delta));
   } else if (delta != null && delta > 0) {
-    heroLine = `Estimated annual tax increase: ${formatUsd0(delta)}`;
-  } else if (delta === null) {
-    const heroTopOpp = strategyData.topOpps[0];
-    if (heroTopOpp) {
-      heroLine = `Top opportunity savings: ${formatUsd0(heroTopOpp.savings)}`;
-    }
+    heroTitle = "Estimated annual tax increase";
+    heroValueLine = formatUsd0(delta);
+  } else if (topOpp) {
+    heroTitle = "Top opportunity savings";
+    heroValueLine = formatUsd0(topOpp.savings);
+  } else {
+    heroTitle = "Initial results summary";
+    // value line omitted
   }
+  const heroBlock =
+    heroValueLine !== ""
+      ? `<p style="margin:0 0 8px 0; font-size:18px; font-weight:bold; color:#111;">${escapeHtml(heroTitle)}: ${escapeHtml(heroValueLine)}</p>`
+      : `<p style="margin:0 0 8px 0; font-size:18px; font-weight:bold; color:#111;">${escapeHtml(heroTitle)}</p>`;
 
-  // Results mini-row (baseline / after strategies)
+  // Baseline → After (when both exist)
   const resultsMiniRow =
     baselineTax != null && afterTax != null
       ? `<p style="margin:0 0 14px 0; color:#333;">Baseline tax: ${escapeHtml(formatUsd(baselineTax))} → After strategies tax: ${escapeHtml(formatUsd(afterTax))}</p>`
       : "";
 
-  // Highlights: (a) biggest opportunity, (b) already in use, (c) next data to confirm
-  const highlightBullets: string[] = [];
-  const topOpp0 = strategyData.topOpps[0];
-  if (topOpp0) {
-    highlightBullets.push(`Largest opportunity detected: ${escapeHtml(topOpp0.name)} (~${formatUsd0(topOpp0.savings)}).`);
-  }
-  const applied0 = strategyData.applied[0];
-  if (applied0) {
-    highlightBullets.push(`You already have ${escapeHtml(applied0.name)} in place.`);
-  }
+  // What this means: 3 bullets (escape at render time)
+  const bullet1 =
+    "Your projected savings are driven by a small set of high-impact planning levers (entity structure and retirement planning are often the biggest drivers for business owners).";
+  const bullet2 = topOpp
+    ? `The largest single opportunity we detected is ${getStrategyDisplayName(topOpp)} (~${formatUsd0(topOpp.savings)}).`
+    : "Several strategies appear potentially available, but the largest impact depends on confirming a few details.";
   const hasRetirementField =
+    safeNumber(get(analysis, "intake.retirement.k401_employee_contrib_ytd")) != null ||
     safeNumber(get(analysis, "intake.personal.k401_employee_contrib_ytd")) != null ||
     safeNumber(get(analysis, "intake.personal.k401_employee_contrib")) != null ||
     get(analysis, "intake.personal.retirement") != null;
+  let bullet3: string;
   if (hasBiz && !bizType) {
-    highlightBullets.push("Confirm your entity type (LLC, S-Corp, etc.) for a refined estimate.");
+    bullet3 =
+      "To finalize the plan, we'll confirm your business entity structure (LLC, S-Corp, etc.) and how you're currently paid.";
   } else if (!hasRetirementField) {
-    highlightBullets.push("Confirm retirement contributions (401k, IRA) for a refined estimate.");
+    bullet3 =
+      "To finalize the plan, we'll confirm current retirement contributions (401(k), IRA) and whether a higher-limit plan is a fit.";
   } else {
-    highlightBullets.push("Confirm payroll, retirement, and expenses for a refined run.");
+    bullet3 =
+      "To finalize the plan, we'll confirm payroll, retirement contributions, and any major deductions/expenses.";
   }
+  const whatThisMeansHtml = [
+    `<li style="margin:0 0 6px 0;">${escapeHtml(bullet1)}</li>`,
+    `<li style="margin:0 0 6px 0;">${escapeHtml(bullet2)}</li>`,
+    `<li style="margin:0 0 6px 0;">${escapeHtml(bullet3)}</li>`,
+  ].join("");
 
-  const highlightsHtml = highlightBullets
-    .map((b) => `<li style="margin:0 0 6px 0;">${b}</li>`)
+  // Strategies worth discussing first (3–5 curated, one-liners; escape at render)
+  const strategyBulletsHtml = curated
+    .map((row) => {
+      const name = getStrategyDisplayName(row);
+      const oneLiner = getStrategyOneLiner(row.id);
+      const line = `${name} — ${oneLiner}`;
+      return `<li style="margin:0 0 6px 0;">${escapeHtml(line)}</li>`;
+    })
     .join("");
+  const strategiesSection =
+    curated.length > 0
+      ? `
+    <h3 style="margin:18px 0 8px 0;">Strategies worth discussing first</h3>
+    <ul style="margin:0 0 14px 0; padding-left:18px;">
+      ${strategyBulletsHtml}
+    </ul>
+  `.trim()
+      : `
+    <h3 style="margin:18px 0 8px 0;">Strategies worth discussing first</h3>
+    <p style="margin:0 0 14px 0; color:#333;">Impact varies by documentation and structure. We'll narrow this to the best few strategies once we confirm a handful of details.</p>
+  `.trim();
 
-  // CTA block
+  // Tables only in debug / table mode
+  const tablesHtml =
+    INCLUDE_TABLES || INCLUDE_RAW_JSON
+      ? (() => {
+          const appliedTable = strategyData.applied.length
+            ? renderStrategyTable("Applied / Already In Use", strategyData.applied)
+            : "";
+          const potentialTable = strategyData.potential.length
+            ? renderStrategyTable("Potential", strategyData.potential)
+            : "";
+          const showOther =
+            strategyData.applied.length === 0 &&
+            strategyData.potential.length === 0 &&
+            strategyData.other.length > 0;
+          const otherTable =
+            showOther && strategyData.other.length
+              ? renderStrategyTable("Other Strategy Results", strategyData.other)
+              : "";
+          return [appliedTable, potentialTable, otherTable].filter(Boolean).join("\n");
+        })()
+      : "";
+
+  // CTA: Next step (advisor tone, outline button)
   const ctaBlock = `
-    <h3 style="margin:18px 0 8px 0;">Recommended next step</h3>
-    <p style="margin:0 0 14px 0; color:#333;">If you'd like to walk through this plan in detail and see which strategies make sense for you, just reply to this email and we'll set up a time to chat.</p>
+    <h3 style="margin:18px 0 8px 0;">Next step</h3>
+    <p style="margin:0 0 14px 0; color:#333;">If you'd like to review this plan in detail and see which strategies make sense for you, just reply to this email and we'll set up a time to chat. We'll confirm assumptions, answer questions, and outline next steps.</p>
     <p style="margin:0 0 18px 0;">
-      <a href="mailto:" style="display:inline-block; padding:10px 20px; background:#36a9a2; color:#fff; text-decoration:none; border-radius:6px; font-weight:bold;">Reply to set up a call</a>
+      <a href="mailto:" style="display:inline-block; padding:10px 16px; border:1px solid #111; color:#111; text-decoration:none; border-radius:8px; font-weight:bold;">Reply to set up a time</a>
     </p>
   `.trim();
+
+  const disclaimer =
+    "This is an initial planning estimate based on the information provided. Final results depend on complete facts, documentation, and your filed return.";
 
   // Raw JSON (gated)
   let rawJsonBlock = "";
@@ -305,31 +412,32 @@ export function buildEmailHtml(analysis: Json): string {
 
     <p style="margin:0 0 14px 0; color:#333;">Hi ${escapeHtml(firstName)},</p>
 
-    <p style="margin:0 0 8px 0; font-size:18px; font-weight:bold; color:#111;">${heroLine}</p>
+    <p style="margin:0 0 14px 0; color:#333;">${escapeHtml(openingParagraph)}</p>
+
+    ${heroBlock}
     ${resultsMiniRow}
 
-    <h3 style="margin:18px 0 8px 0;">Highlights</h3>
+    <h3 style="margin:18px 0 8px 0;">What this means</h3>
     <ul style="margin:0 0 14px 0; padding-left:18px;">
-      ${highlightsHtml}
+      ${whatThisMeansHtml}
     </ul>
 
-    ${strategyData.html}
+    ${strategiesSection}
 
     ${ctaBlock}
 
+    ${tablesHtml}
+
     ${rawJsonBlock}
 
-    <p style="margin-top:16px; color:#666; font-size:12px;">
-      This email is generated automatically. Figures are shown only if present in the payload; no numbers are recomputed.
-    </p>
+    <p style="margin-top:16px; color:#666; font-size:12px;">${escapeHtml(disclaimer)}</p>
   </div>
 </div>
 `.trim();
 }
 
 /**
- * Plain text version of the email: hero, highlights, top 3 opportunities, assumptions, disclaimer.
- * No tables; simple bullet lists.
+ * Plain text version of the email: advisor structure, same as HTML (opening, hero, What this means, curated strategies, CTA, disclaimer). No tables.
  */
 export function buildEmailText(analysis: Json): string {
   const hasBiz =
@@ -337,7 +445,10 @@ export function buildEmailText(analysis: Json): string {
     get(analysis, "business.has_business") ??
     get(analysis, "business.hasBusiness");
   const bizType =
-    asString(get(analysis, "intake.business.type")) ?? asString(get(analysis, "business.type"));
+    asString(get(analysis, "intake.business.entity_type")) ??
+    asString(get(analysis, "intake.business.type")) ??
+    asString(get(analysis, "business.entity_type")) ??
+    asString(get(analysis, "business.type"));
 
   const strategies =
     get(analysis, "strategies") ??
@@ -346,7 +457,6 @@ export function buildEmailText(analysis: Json): string {
     get(analysis, "impact_summary.impacts") ??
     get(analysis, "impact_summary.per_strategy") ??
     null;
-  // Prefer *_breakdown.totals so email figures match baseline_breakdown/revised_breakdown in raw JSON
   const baselineTax =
     safeNumber(get(analysis, "baseline_breakdown.totals.totalTax")) ??
     safeNumber(get(analysis, "baseline_breakdown.totals.total_tax")) ??
@@ -378,6 +488,14 @@ export function buildEmailText(analysis: Json): string {
 
   const firstName = inferName(analysis);
   const strategyData = renderStrategiesAndTopOpportunities(strategies);
+  const topOpp = strategyData.topOpps[0];
+  const curated = getCuratedStrategies(strategyData);
+
+  const hasRetirementField =
+    safeNumber(get(analysis, "intake.retirement.k401_employee_contrib_ytd")) != null ||
+    safeNumber(get(analysis, "intake.personal.k401_employee_contrib_ytd")) != null ||
+    safeNumber(get(analysis, "intake.personal.k401_employee_contrib")) != null ||
+    get(analysis, "intake.personal.retirement") != null;
 
   const lines: string[] = [];
   lines.push("Good Fellow CFO LLC");
@@ -385,70 +503,72 @@ export function buildEmailText(analysis: Json): string {
   lines.push("");
   lines.push(`Hi ${firstName},`);
   lines.push("");
+  lines.push(
+    "Based on the information you provided, we ran an initial tax planning review to identify areas where you may be overpaying and where proactive planning could reduce your overall tax burden."
+  );
+  lines.push("");
 
   if (delta != null && delta < 0) {
     lines.push(`Estimated annual tax savings: ${formatUsd0(Math.abs(delta))}`);
   } else if (delta != null && delta > 0) {
     lines.push(`Estimated annual tax increase: ${formatUsd0(delta)}`);
+  } else if (topOpp) {
+    lines.push(`Top opportunity savings: ${formatUsd0(topOpp.savings)}`);
   } else {
-    const heroTopOpp = strategyData.topOpps[0];
-    if (heroTopOpp) {
-      lines.push(`Top opportunity savings: ${formatUsd0(heroTopOpp.savings)}`);
-    } else {
-      lines.push("Summary of your results.");
-    }
+    lines.push("Initial results summary");
   }
   if (baselineTax != null && afterTax != null) {
     lines.push(`Baseline tax: ${formatUsd(baselineTax)} → After strategies tax: ${formatUsd(afterTax)}`);
   }
   lines.push("");
 
-  lines.push("Highlights");
-  const topOppFirst = strategyData.topOpps[0];
-  if (topOppFirst) {
-    lines.push(`• Largest opportunity detected: ${topOppFirst.name} (~${formatUsd0(topOppFirst.savings)}).`);
-  }
-  const appliedFirst = strategyData.applied[0];
-  if (appliedFirst) {
-    lines.push(`• You already have ${appliedFirst.name} in place.`);
-  }
-  const hasRetirementField =
-    safeNumber(get(analysis, "intake.personal.k401_employee_contrib_ytd")) != null ||
-    safeNumber(get(analysis, "intake.personal.k401_employee_contrib")) != null ||
-    get(analysis, "intake.personal.retirement") != null;
+  lines.push("What this means");
+  lines.push(
+    "• Your projected savings are driven by a small set of high-impact planning levers (entity structure and retirement planning are often the biggest drivers for business owners)."
+  );
+  lines.push(
+    topOpp
+      ? `• The largest single opportunity we detected is ${getStrategyDisplayName(topOpp)} (~${formatUsd0(topOpp.savings)}).`
+      : "• Several strategies appear potentially available, but the largest impact depends on confirming a few details."
+  );
   if (hasBiz && !bizType) {
-    lines.push("• Confirm your entity type (LLC, S-Corp, etc.) for a refined estimate.");
+    lines.push(
+      "• To finalize the plan, we'll confirm your business entity structure (LLC, S-Corp, etc.) and how you're currently paid."
+    );
   } else if (!hasRetirementField) {
-    lines.push("• Confirm retirement contributions (401k, IRA) for a refined estimate.");
+    lines.push(
+      "• To finalize the plan, we'll confirm current retirement contributions (401(k), IRA) and whether a higher-limit plan is a fit."
+    );
   } else {
-    lines.push("• Confirm payroll, retirement, and expenses for a refined run.");
+    lines.push(
+      "• To finalize the plan, we'll confirm payroll, retirement contributions, and any major deductions/expenses."
+    );
   }
   lines.push("");
 
-  lines.push("Top Opportunities (top 3)");
-  for (const opp of strategyData.topOpps.slice(0, 3)) {
-    lines.push(`• ${opp.name}: ~${formatUsd0(opp.savings)} estimated savings`);
-  }
-  if (strategyData.topOpps.length === 0) {
-    lines.push("• No large potential savings items detected in the payload.");
-  }
-  lines.push("");
-
-  lines.push("Assumptions");
-  if (baselineTax != null || afterTax != null) {
-    if (baselineTax != null) lines.push(`• Baseline total tax: ${formatUsd(baselineTax)}`);
-    if (afterTax != null) lines.push(`• After strategies total tax: ${formatUsd(afterTax)}`);
+  lines.push("Strategies worth discussing first");
+  if (curated.length > 0) {
+    for (const row of curated) {
+      const name = getStrategyDisplayName(row);
+      const oneLiner = getStrategyOneLiner(row.id);
+      lines.push(`• ${name} — ${oneLiner}`);
+    }
   } else {
-    lines.push("• Figures are from the payload; no numbers recomputed.");
+    lines.push(
+      "Impact varies by documentation and structure. We'll narrow this to the best few strategies once we confirm a handful of details."
+    );
   }
   lines.push("");
 
-  lines.push("Recommended next step");
+  lines.push("Next step");
   lines.push("");
-  lines.push("If you'd like to walk through this plan in detail and see which strategies make sense for you,");
-  lines.push("just reply to this email and we'll set up a time to chat.");
+  lines.push(
+    "If you'd like to review this plan in detail and see which strategies make sense for you, just reply to this email and we'll set up a time to chat. We'll confirm assumptions, answer questions, and outline next steps."
+  );
   lines.push("");
-  lines.push("This email is generated automatically. Figures are shown only if present in the payload; no numbers are recomputed.");
+  lines.push(
+    "This is an initial planning estimate based on the information provided. Final results depend on complete facts, documentation, and your filed return."
+  );
 
   return lines.join("\n");
 }
@@ -485,6 +605,8 @@ function extractStrategyRow(s: any): StrategyRow {
     safeNumber(s.impact) ??
     safeNumber((s.taxLiabilityDelta as { base?: number })?.base) ??
     safeNumber(get(s, "taxLiabilityDelta.base")) ??
+    safeNumber((s.payrollTaxDelta as { base?: number })?.base) ??
+    safeNumber(get(s, "payrollTaxDelta.base")) ??
     null;
 
   return { id, name, status, delta };
@@ -496,6 +618,22 @@ interface StrategyBlockResult {
   applied: StrategyRow[];
   potential: StrategyRow[];
   other: StrategyRow[];
+}
+
+/** Up to 5 strategies for "Strategies worth discussing": prefer potential, then other, then applied. */
+function getCuratedStrategies(data: StrategyBlockResult): StrategyRow[] {
+  const combined = [...data.potential, ...data.other, ...data.applied];
+  return combined.slice(0, 5);
+}
+
+function getStrategyOneLiner(id: string): string {
+  const normalized = (id ?? "").trim().toLowerCase();
+  return STRATEGY_ONE_LINERS[normalized] ?? "Potentially available; we'll confirm fit and requirements.";
+}
+
+function getStrategyDisplayName(row: StrategyRow): string {
+  const id = (row.id ?? "").trim().toLowerCase();
+  return STRATEGY_DISPLAY_NAMES[id] ?? row.name ?? row.id ?? "Strategy";
 }
 
 function renderStrategiesAndTopOpportunities(strategies: any): StrategyBlockResult {
