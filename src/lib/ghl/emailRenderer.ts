@@ -142,16 +142,26 @@ export function buildEmailSubject(_email: string, analysis: Json): string {
     safeNumber(get(analysis, "baseline.total_tax")) ??
     safeNumber(get(analysis, "baseline.totalTax")) ??
     safeNumber(get(analysis, "baseline.total")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.baseline.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.baseline.total_tax")) ??
     null;
   const afterTax =
     safeNumber(get(analysis, "after.total_tax")) ??
     safeNumber(get(analysis, "after.totalTax")) ??
     safeNumber(get(analysis, "result.total_tax")) ??
+    safeNumber(get(analysis, "revised.total_tax")) ??
+    safeNumber(get(analysis, "revised.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.revised.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.revised.total_tax")) ??
+    safeNumber(get(analysis, "revised_breakdown.totals.totalTax")) ??
+    safeNumber(get(analysis, "revised_breakdown.totals.total_tax")) ??
     null;
   const deltaRaw =
     safeNumber(get(analysis, "delta.total_tax")) ??
     safeNumber(get(analysis, "delta.tax")) ??
     safeNumber(get(analysis, "savings.total_tax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.totalTaxDelta.base")) ??
+    safeNumber(get(analysis, "impact_summary.deltas.total_tax_delta_base")) ??
     null;
   const delta = computeDelta({ baselineTax, afterTax, deltaRaw });
 
@@ -180,22 +190,34 @@ export function buildEmailHtml(analysis: Json): string {
     get(analysis, "strategies") ??
     get(analysis, "strategy_impacts") ??
     get(analysis, "impacts") ??
+    get(analysis, "impact_summary.impacts") ??
+    get(analysis, "impact_summary.per_strategy") ??
     null;
 
   const baselineTax =
     safeNumber(get(analysis, "baseline.total_tax")) ??
     safeNumber(get(analysis, "baseline.totalTax")) ??
     safeNumber(get(analysis, "baseline.total")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.baseline.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.baseline.total_tax")) ??
     null;
   const afterTax =
     safeNumber(get(analysis, "after.total_tax")) ??
     safeNumber(get(analysis, "after.totalTax")) ??
     safeNumber(get(analysis, "result.total_tax")) ??
+    safeNumber(get(analysis, "revised.total_tax")) ??
+    safeNumber(get(analysis, "revised.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.revised.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.revised.total_tax")) ??
+    safeNumber(get(analysis, "revised_breakdown.totals.totalTax")) ??
+    safeNumber(get(analysis, "revised_breakdown.totals.total_tax")) ??
     null;
   const deltaRaw =
     safeNumber(get(analysis, "delta.total_tax")) ??
     safeNumber(get(analysis, "delta.tax")) ??
     safeNumber(get(analysis, "savings.total_tax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.totalTaxDelta.base")) ??
+    safeNumber(get(analysis, "impact_summary.deltas.total_tax_delta_base")) ??
     null;
   const delta = computeDelta({ baselineTax, afterTax, deltaRaw });
 
@@ -315,21 +337,33 @@ export function buildEmailText(analysis: Json): string {
     get(analysis, "strategies") ??
     get(analysis, "strategy_impacts") ??
     get(analysis, "impacts") ??
+    get(analysis, "impact_summary.impacts") ??
+    get(analysis, "impact_summary.per_strategy") ??
     null;
   const baselineTax =
     safeNumber(get(analysis, "baseline.total_tax")) ??
     safeNumber(get(analysis, "baseline.totalTax")) ??
     safeNumber(get(analysis, "baseline.total")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.baseline.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.baseline.total_tax")) ??
     null;
   const afterTax =
     safeNumber(get(analysis, "after.total_tax")) ??
     safeNumber(get(analysis, "after.totalTax")) ??
     safeNumber(get(analysis, "result.total_tax")) ??
+    safeNumber(get(analysis, "revised.total_tax")) ??
+    safeNumber(get(analysis, "revised.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.revised.totalTax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.revised.total_tax")) ??
+    safeNumber(get(analysis, "revised_breakdown.totals.totalTax")) ??
+    safeNumber(get(analysis, "revised_breakdown.totals.total_tax")) ??
     null;
   const deltaRaw =
     safeNumber(get(analysis, "delta.total_tax")) ??
     safeNumber(get(analysis, "delta.tax")) ??
     safeNumber(get(analysis, "savings.total_tax")) ??
+    safeNumber(get(analysis, "impact_summary.revisedTotals.totalTaxDelta.base")) ??
+    safeNumber(get(analysis, "impact_summary.deltas.total_tax_delta_base")) ??
     null;
   const delta = computeDelta({ baselineTax, afterTax, deltaRaw });
 
@@ -440,6 +474,8 @@ function extractStrategyRow(s: any): StrategyRow {
     safeNumber(s.deltaTax) ??
     safeNumber(s.delta) ??
     safeNumber(s.impact) ??
+    safeNumber((s.taxLiabilityDelta as { base?: number })?.base) ??
+    safeNumber(get(s, "taxLiabilityDelta.base")) ??
     null;
 
   return { id, name, status, delta };
