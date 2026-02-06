@@ -588,7 +588,14 @@ function parseStrategies(strategies: any): any[] {
   return list.filter(Boolean);
 }
 
-type StrategyRow = { id: string; name: string; status: string; delta: number | null };
+type StrategyRow = {
+  id: string;
+  name: string;
+  status: string;
+  delta: number | null;
+  flags?: string[];
+};
+
 type TopOpp = StrategyRow & { savings: number };
 
 function extractStrategyRow(s: any): StrategyRow {
@@ -609,7 +616,9 @@ function extractStrategyRow(s: any): StrategyRow {
     safeNumber(get(s, "payrollTaxDelta.base")) ??
     null;
 
-  return { id, name, status, delta };
+  const flags = Array.isArray(s.flags) ? s.flags : undefined;
+
+  return { id, name, status, delta, flags };
 }
 
 interface StrategyBlockResult {
@@ -620,10 +629,9 @@ interface StrategyBlockResult {
   other: StrategyRow[];
 }
 
-/** Up to 5 strategies for "Strategies worth discussing": prefer potential, then other, then applied. */
+/** Up to 5 strategies for "Strategies worth discussing first": only those applied to tax savings. */
 function getCuratedStrategies(data: StrategyBlockResult): StrategyRow[] {
-  const combined = [...data.potential, ...data.other, ...data.applied];
-  return combined.slice(0, 5);
+  return data.applied.slice(0, 5);
 }
 
 function getStrategyOneLiner(id: string): string {
@@ -643,9 +651,11 @@ function renderStrategiesAndTopOpportunities(strategies: any): StrategyBlockResu
 
   const rows = list.map(extractStrategyRow);
 
-  const applied = rows.filter((r) => isAppliedStatus(r.status));
-  const potential = rows.filter((r) => isPotentialStatus(r.status));
-  const other = rows.filter((r) => !isAppliedStatus(r.status) && !isPotentialStatus(r.status));
+  const isAppliedRow = (r: StrategyRow) =>
+    isAppliedStatus(r.status) || (Array.isArray(r.flags) && r.flags.includes("APPLIED"));
+  const applied = rows.filter(isAppliedRow);
+  const potential = rows.filter((r) => !isAppliedRow(r) && isPotentialStatus(r.status));
+  const other = rows.filter((r) => !isAppliedRow(r) && !isPotentialStatus(r.status));
 
   // "Top Opportunities" = biggest estimated savings among potential/other
   // Savings convention: negative delta => savings (after - baseline)
