@@ -54,6 +54,65 @@ function isPlainObject(v: unknown): v is Record<string, any> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
+const MAX_ANALYSIS_DEPTH = 6;
+const MAX_ANALYSIS_VISIT = 2000;
+
+/**
+ * Score a candidate object for "looks like the analysis result" (baseline/after/strategies).
+ * Higher = more likely to be the node to pass to the email renderer.
+ */
+function scoreAnalysisCandidate(obj: unknown): number {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return 0;
+  const o = obj as Record<string, unknown>;
+  let s = 0;
+  if (o.baseline != null) s += 5;
+  if (o.after != null || o.revised != null || o.scenario != null || o.result != null) s += 5;
+  if (o.strategies != null || o.strategy_impacts != null || o.impacts != null) s += 5;
+  if (o.intake != null) s += 3;
+  if (o.delta != null) s += 2;
+  if (o.savings != null) s += 2;
+  const keys = Object.keys(o);
+  if (keys.some((k) => k === "request_id" || k === "created_at_iso")) s += 1;
+  return s;
+}
+
+/**
+ * Traverse root to find the nested plain object with the highest analysis score.
+ * Depth limit 6, max nodes visited 2000. Skips arrays except to traverse object elements.
+ */
+function findBestAnalysisNode(root: unknown): { node: unknown; path: string; score: number } {
+  let best: { node: unknown; path: string; score: number } = {
+    node: root,
+    path: "",
+    score: isPlainObject(root) ? scoreAnalysisCandidate(root) : 0,
+  };
+  let visited = 0;
+
+  function visit(obj: unknown, path: string, depth: number): void {
+    if (visited >= MAX_ANALYSIS_VISIT || depth > MAX_ANALYSIS_DEPTH) return;
+    if (!isPlainObject(obj)) return;
+    visited++;
+    const score = scoreAnalysisCandidate(obj);
+    if (score > best.score) best = { node: obj, path, score };
+    if (depth === MAX_ANALYSIS_DEPTH) return;
+    const o = obj as Record<string, unknown>;
+    for (const key of Object.keys(o)) {
+      if (visited >= MAX_ANALYSIS_VISIT) break;
+      const v = o[key];
+      const nextPath = path ? `${path}.${key}` : key;
+      if (isPlainObject(v)) visit(v, nextPath, depth + 1);
+      else if (Array.isArray(v)) {
+        for (let i = 0; i < v.length && visited < MAX_ANALYSIS_VISIT; i++) {
+          if (isPlainObject(v[i])) visit(v[i], `${nextPath}[${i}]`, depth + 1);
+        }
+      }
+    }
+  }
+
+  visit(root, "", 0);
+  return best;
+}
+
 function parseTruthyEnvFlag(v: string | undefined): boolean {
   const s = (v ?? "").trim().toLowerCase();
   return s === "1" || s === "true" || s === "yes" || s === "on";
@@ -205,18 +264,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // Unwrap analysis from common webhook/API envelopes so email renderer gets baseline/after/strategies
-    const result = body as Record<string, unknown>;
-    const analysisForEmail: Record<string, unknown> | null =
-      result && typeof result === "object" && result.analysis && typeof result.analysis === "object"
-        ? (result.analysis as Record<string, unknown>)
-        : result && typeof result === "object" && (result as any).data?.analysis && typeof (result as any).data.analysis === "object"
-          ? ((result as any).data.analysis as Record<string, unknown>)
-          : result && typeof result === "object" && (result as any).payload?.analysis && typeof (result as any).payload.analysis === "object"
-            ? ((result as any).payload.analysis as Record<string, unknown>)
-            : result && typeof result === "object" && result.result && typeof result.result === "object"
-              ? (result.result as Record<string, unknown>)
-              : (result as Record<string, unknown>);
+    // Locate the best nested node that looks like the analysis result (baseline/after/strategies)
+    const result = body;
+    const best = findBestAnalysisNode(result);
+    const analysisForEmail = best.node ?? result;
 
     const hasAnalysis = isPlainObject(analysisForEmail);
     if (!hasAnalysis) {
@@ -308,20 +359,45 @@ export async function POST(req: Request) {
     /* -------------------------------------------------
        3) Build email
        ------------------------------------------------- */
-    console.log("EMAIL_ANALYSIS_SHAPE", {
-      topLevelKeys: analysisForEmail && typeof analysisForEmail === "object" ? Object.keys(analysisForEmail).slice(0, 30) : [],
-      hasBaseline: !!analysisForEmail?.baseline,
-      hasAfter: !!analysisForEmail?.after,
-      hasDelta: !!analysisForEmail?.delta,
-      strategiesType: Array.isArray(analysisForEmail?.strategies) ? "array" : typeof analysisForEmail?.strategies,
-      strategiesLen: Array.isArray(analysisForEmail?.strategies) ? analysisForEmail.strategies.length : null,
-      baselineKeys: analysisForEmail?.baseline ? Object.keys(analysisForEmail.baseline).slice(0, 20) : [],
-      afterKeys: analysisForEmail?.after ? Object.keys(analysisForEmail.after).slice(0, 20) : [],
+    console.log("EMAIL_ANALYSIS_PICK", {
+      pickedPath: best.path,
+      pickedScore: best.score,
+      topLevelKeys:
+        analysisForEmail && typeof analysisForEmail === "object"
+          ? Object.keys(analysisForEmail).slice(0, 40)
+          : [],
+      hasBaseline: !!(analysisForEmail as Record<string, unknown>)?.baseline,
+      hasAfter: !!(
+        (analysisForEmail as Record<string, unknown>)?.after ||
+        (analysisForEmail as Record<string, unknown>)?.revised ||
+        (analysisForEmail as Record<string, unknown>)?.scenario ||
+        (analysisForEmail as Record<string, unknown>)?.result
+      ),
+      hasStrategies: !!(
+        (analysisForEmail as Record<string, unknown>)?.strategies ||
+        (analysisForEmail as Record<string, unknown>)?.strategy_impacts ||
+        (analysisForEmail as Record<string, unknown>)?.impacts
+      ),
+      strategiesType: Array.isArray((analysisForEmail as Record<string, unknown>)?.strategies)
+        ? "array"
+        : typeof (analysisForEmail as Record<string, unknown>)?.strategies,
+      strategiesLen: (() => {
+        const s = (analysisForEmail as Record<string, unknown>)?.strategies;
+        return Array.isArray(s) ? s.length : null;
+      })(),
+      baselineKeys: (analysisForEmail as Record<string, unknown>)?.baseline
+        ? Object.keys((analysisForEmail as Record<string, unknown>).baseline as object).slice(0, 25)
+        : [],
+      afterKeys: (analysisForEmail as Record<string, unknown>)?.after
+        ? Object.keys((analysisForEmail as Record<string, unknown>).after as object).slice(0, 25)
+        : (analysisForEmail as Record<string, unknown>)?.revised
+          ? Object.keys((analysisForEmail as Record<string, unknown>).revised as object).slice(0, 25)
+          : [],
     });
 
-    const subject = buildEmailSubject(email, analysisForEmail);
-    const html = buildEmailHtml(analysisForEmail);
-    const text = buildEmailText(analysisForEmail);
+    const subject = buildEmailSubject(email, analysisForEmail as Record<string, any>);
+    const html = buildEmailHtml(analysisForEmail as Record<string, any>);
+    const text = buildEmailText(analysisForEmail as Record<string, any>);
     console.log("EMAIL_BODY_LENGTHS", { subjectLen: subject.length, htmlLen: html.length, textLen: text.length });
 
     /* -------------------------------------------------
