@@ -2,6 +2,9 @@ import "server-only";
 
 type Json = Record<string, any>;
 
+/** Set to true to include the raw analysis JSON block in the email (default off for WOW-ready emails). */
+const INCLUDE_RAW_JSON = false;
+
 function asString(v: unknown): string | null {
   return typeof v === "string" && v.trim().length ? v.trim() : null;
 }
@@ -35,6 +38,54 @@ function formatUsd(n: number): string {
   } catch {
     return `$${n.toFixed(2)}`;
   }
+}
+
+/** USD with 0 decimals for headline values (Intl). */
+function formatUsd0(n: number): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(n);
+  } catch {
+    return `$${Math.round(n)}`;
+  }
+}
+
+interface BestEffortTax {
+  baselineTax: number | null;
+  afterTax: number | null;
+  deltaRaw: number | null;
+}
+
+/** If both baselineTax and afterTax present, return afterTax - baselineTax; else return existing deltaRaw. */
+function computeDelta(bestEffort: BestEffortTax): number | null {
+  const { baselineTax, afterTax, deltaRaw } = bestEffort;
+  if (
+    baselineTax != null &&
+    typeof baselineTax === "number" &&
+    Number.isFinite(baselineTax) &&
+    afterTax != null &&
+    typeof afterTax === "number" &&
+    Number.isFinite(afterTax)
+  ) {
+    return afterTax - baselineTax;
+  }
+  return deltaRaw ?? null;
+}
+
+/** First name from intake/contact; "there" if missing. */
+function inferName(analysis: Json): string {
+  const name =
+    asString(get(analysis, "intake.personal.first_name")) ??
+    asString(get(analysis, "intake.personal.firstName")) ??
+    asString(get(analysis, "contact.firstName")) ??
+    asString(get(analysis, "contact.first_name")) ??
+    asString(get(analysis, "personal.first_name")) ??
+    asString(get(analysis, "personal.firstName"));
+  return name && name.trim().length > 0 ? name.trim() : "there";
 }
 
 /**
@@ -81,58 +132,49 @@ function isPotentialStatus(status: string): boolean {
   );
 }
 
-export function buildEmailSubject(email: string, analysis: Json): string {
+export function buildEmailSubject(_email: string, analysis: Json): string {
   const state =
     asString(get(analysis, "intake.personal.state")) ??
     asString(get(analysis, "personal.state")) ??
     asString(get(analysis, "state"));
 
-  const taxable =
-    safeNumber(get(analysis, "baseline.taxable_income")) ??
-    safeNumber(get(analysis, "baseline.taxableIncome")) ??
-    safeNumber(get(analysis, "taxable_income"));
+  const baselineTax =
+    safeNumber(get(analysis, "baseline.total_tax")) ??
+    safeNumber(get(analysis, "baseline.totalTax")) ??
+    safeNumber(get(analysis, "baseline.total")) ??
+    null;
+  const afterTax =
+    safeNumber(get(analysis, "after.total_tax")) ??
+    safeNumber(get(analysis, "after.totalTax")) ??
+    safeNumber(get(analysis, "result.total_tax")) ??
+    null;
+  const deltaRaw =
+    safeNumber(get(analysis, "delta.total_tax")) ??
+    safeNumber(get(analysis, "delta.tax")) ??
+    safeNumber(get(analysis, "savings.total_tax")) ??
+    null;
+  const delta = computeDelta({ baselineTax, afterTax, deltaRaw });
 
-  const parts: string[] = ["Your Tax Planning Analysis"];
+  if (delta != null && delta < 0) {
+    const parts = ["Est. Savings", formatUsd0(Math.abs(delta))];
+    if (state) parts.push(`(${state})`);
+    return parts.join(" ");
+  }
+  const parts: string[] = ["Your Tax Planning Summary"];
   if (state) parts.push(`(${state})`);
-  if (taxable != null) parts.push(`– Taxable Income ${formatUsd(taxable)}`);
-  parts.push(`– ${email}`);
-
   return parts.join(" ");
 }
 
 /**
- * Best-effort HTML rendering.
- * - Treat analysis as opaque JSON.
- * - Use structured sections when fields exist; otherwise fall back to pretty JSON.
+ * Best-effort HTML rendering. WOW-ready structure aligned with on-screen results.
  */
 export function buildEmailHtml(analysis: Json): string {
-  const filingStatus =
-    asString(get(analysis, "intake.personal.filing_status")) ??
-    asString(get(analysis, "personal.filing_status")) ??
-    asString(get(analysis, "personal.filingStatus"));
-
-  const state =
-    asString(get(analysis, "intake.personal.state")) ??
-    asString(get(analysis, "personal.state")) ??
-    asString(get(analysis, "state"));
-
-  const incomeExBiz =
-    safeNumber(get(analysis, "intake.personal.income_excl_business")) ??
-    safeNumber(get(analysis, "personal.income_excl_business")) ??
-    safeNumber(get(analysis, "personal.incomeExclBusiness"));
-
   const hasBiz =
     get(analysis, "intake.business.has_business") ??
     get(analysis, "business.has_business") ??
     get(analysis, "business.hasBusiness");
-
   const bizType =
     asString(get(analysis, "intake.business.type")) ?? asString(get(analysis, "business.type"));
-
-  const bizNetIncome =
-    safeNumber(get(analysis, "intake.business.net_income")) ??
-    safeNumber(get(analysis, "business.net_income")) ??
-    safeNumber(get(analysis, "business.netIncome"));
 
   const strategies =
     get(analysis, "strategies") ??
@@ -145,75 +187,104 @@ export function buildEmailHtml(analysis: Json): string {
     safeNumber(get(analysis, "baseline.totalTax")) ??
     safeNumber(get(analysis, "baseline.total")) ??
     null;
-
   const afterTax =
     safeNumber(get(analysis, "after.total_tax")) ??
     safeNumber(get(analysis, "after.totalTax")) ??
     safeNumber(get(analysis, "result.total_tax")) ??
     null;
-
-  // NOTE: delta could be "after - baseline" (negative = savings) OR a "savings" positive number
-  // We display it with best-effort formatting:
   const deltaRaw =
     safeNumber(get(analysis, "delta.total_tax")) ??
     safeNumber(get(analysis, "delta.tax")) ??
     safeNumber(get(analysis, "savings.total_tax")) ??
     null;
+  const delta = computeDelta({ baselineTax, afterTax, deltaRaw });
 
-  const intakeRows: Array<[string, string]> = [];
-  if (filingStatus) intakeRows.push(["Filing status", filingStatus]);
-  if (state) intakeRows.push(["State", state]);
-  if (incomeExBiz != null) intakeRows.push(["Income (excl. business)", formatUsd(incomeExBiz)]);
-  if (typeof hasBiz === "boolean") intakeRows.push(["Has business", hasBiz ? "Yes" : "No"]);
-  if (bizType) intakeRows.push(["Business type", bizType]);
-  if (bizNetIncome != null) intakeRows.push(["Business net income", formatUsd(bizNetIncome)]);
+  const firstName = inferName(analysis);
+  const strategyData = renderStrategiesAndTopOpportunities(strategies);
 
-  const taxRows: Array<[string, string]> = [];
-  if (baselineTax != null) taxRows.push(["Baseline total tax", formatUsd(baselineTax)]);
-  if (afterTax != null) taxRows.push(["After strategies total tax", formatUsd(afterTax)]);
-  if (deltaRaw != null) {
-    // If this field is actually a "savings" positive number, it will label as increase.
-    // But in most pipelines delta is "after - baseline". Keeping best-effort:
-    const { label, value } = formatTaxImpact(deltaRaw);
-    taxRows.push([label, value]);
+  // Hero line
+  let heroLine = "Summary of your results.";
+  if (delta != null && delta < 0) {
+    heroLine = `Estimated annual tax savings: ${formatUsd0(Math.abs(delta))}`;
+  } else if (delta != null && delta > 0) {
+    heroLine = `Estimated annual tax increase: ${formatUsd0(delta)}`;
   }
 
-  const strategiesBlock = renderStrategiesAndTopOpportunities(strategies);
+  // Results mini-row (baseline / after strategies)
+  const resultsMiniRow =
+    baselineTax != null && afterTax != null
+      ? `<p style="margin:0 0 14px 0; color:#333;">Baseline tax: ${escapeHtml(formatUsd(baselineTax))} → After strategies tax: ${escapeHtml(formatUsd(afterTax))}</p>`
+      : "";
 
-  const rawJson = JSON.stringify(analysis, null, 2) ?? "";
-  const { text: rawJsonTrunc, truncated } = truncate(rawJson, 12000);
-  const rawJsonEsc = escapeHtml(rawJsonTrunc);
+  // Highlights: (a) biggest opportunity, (b) already in use, (c) next data to confirm
+  const highlightBullets: string[] = [];
+  const topOpp0 = strategyData.topOpps[0];
+  if (topOpp0) {
+    highlightBullets.push(`Largest opportunity detected: ${escapeHtml(topOpp0.name)} (~${formatUsd0(topOpp0.savings)}).`);
+  }
+  const applied0 = strategyData.applied[0];
+  if (applied0) {
+    highlightBullets.push(`You already have ${escapeHtml(applied0.name)} in place.`);
+  }
+  const hasRetirementField =
+    safeNumber(get(analysis, "intake.personal.k401_employee_contrib_ytd")) != null ||
+    safeNumber(get(analysis, "intake.personal.k401_employee_contrib")) != null ||
+    get(analysis, "intake.personal.retirement") != null;
+  if (hasBiz && !bizType) {
+    highlightBullets.push("Confirm your entity type (LLC, S-Corp, etc.) for a refined estimate.");
+  } else if (!hasRetirementField) {
+    highlightBullets.push("Confirm retirement contributions (401k, IRA) for a refined estimate.");
+  } else {
+    highlightBullets.push("Confirm payroll, retirement, and expenses for a refined run.");
+  }
+
+  const highlightsHtml = highlightBullets
+    .map((b) => `<li style="margin:0 0 6px 0;">${b}</li>`)
+    .join("");
+
+  // CTA block
+  const ctaBlock = `
+    <h3 style="margin:18px 0 8px 0;">Recommended next step</h3>
+    <p style="margin:0 0 14px 0; color:#333;">If you'd like to walk through this plan in detail and see which strategies make sense for you, just reply to this email and we'll set up a time to chat.</p>
+    <p style="margin:0 0 18px 0;">
+      <a href="mailto:" style="display:inline-block; padding:10px 20px; background:#36a9a2; color:#fff; text-decoration:none; border-radius:6px; font-weight:bold;">Reply to set up a call</a>
+    </p>
+  `.trim();
+
+  // Raw JSON (gated)
+  let rawJsonBlock = "";
+  if (INCLUDE_RAW_JSON) {
+    const rawJson = JSON.stringify(analysis, null, 2) ?? "";
+    const { text: rawJsonTrunc, truncated } = truncate(rawJson, 12000);
+    const rawJsonEsc = escapeHtml(rawJsonTrunc);
+    rawJsonBlock = `
+    <h3 style="margin:18px 0 8px 0;">Raw Analysis (as received)</h3>
+    <pre style="background:#f6f8fa; padding:12px; border-radius:8px; overflow:auto; white-space:pre-wrap; border:1px solid #e5e7eb;">${rawJsonEsc}</pre>
+    ${truncated ? `<p style="margin-top:8px; color:#666; font-size:12px;">Raw analysis was truncated for email length.</p>` : ""}
+    `.trim();
+  }
 
   return `
 <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.45; color:#111;">
   <div style="max-width: 760px; margin: 0 auto; padding: 10px 0;">
-    <h2 style="margin:0 0 10px 0;">Tax Planning Analysis</h2>
+    <p style="margin:0 0 4px 0; font-size:14px; color:#555;">Good Fellow CFO LLC</p>
+    <h2 style="margin:0 0 18px 0;">Tax Planning Summary</h2>
 
-    <p style="margin:0 0 14px 0; color:#333;">
-      Below is a summary of the key inputs, estimated results, and the biggest opportunities identified.
-    </p>
+    <p style="margin:0 0 14px 0; color:#333;">Hi ${escapeHtml(firstName)},</p>
 
-    ${intakeRows.length ? renderKeyValueTable("Intake Summary", intakeRows) : ""}
+    <p style="margin:0 0 8px 0; font-size:18px; font-weight:bold; color:#111;">${heroLine}</p>
+    ${resultsMiniRow}
 
-    ${taxRows.length ? renderKeyValueTable("High-Level Results (best-effort)", taxRows) : ""}
-
-    ${strategiesBlock}
-
-    <h3 style="margin:18px 0 8px 0;">Next Steps</h3>
+    <h3 style="margin:18px 0 8px 0;">Highlights</h3>
     <ul style="margin:0 0 14px 0; padding-left:18px;">
-      <li>Reply with any missing details (entity type, payroll, retirement contributions, expenses).</li>
-      <li>If you want, we can rerun a refined version using updated inputs.</li>
+      ${highlightsHtml}
     </ul>
 
-    <h3 style="margin:18px 0 8px 0;">Raw Analysis (as received)</h3>
-    <pre style="background:#f6f8fa; padding:12px; border-radius:8px; overflow:auto; white-space:pre-wrap; border:1px solid #e5e7eb;">${rawJsonEsc}</pre>
-    ${
-      truncated
-        ? `<p style="margin-top:8px; color:#666; font-size:12px;">
-            Raw analysis was truncated for email length.
-          </p>`
-        : ""
-    }
+    ${strategyData.html}
+
+    ${ctaBlock}
+
+    ${rawJsonBlock}
 
     <p style="margin-top:16px; color:#666; font-size:12px;">
       This email is generated automatically. Figures are shown only if present in the payload; no numbers are recomputed.
@@ -223,25 +294,110 @@ export function buildEmailHtml(analysis: Json): string {
 `.trim();
 }
 
-function renderKeyValueTable(title: string, rows: Array<[string, string]>): string {
-  const trs = rows
-    .map(
-      ([k, v]) => `
-    <tr>
-      <td style="padding:8px 10px; border:1px solid #ddd; font-weight:bold; background:#fafafa; width:240px;">${escapeHtml(
-        k
-      )}</td>
-      <td style="padding:8px 10px; border:1px solid #ddd;">${escapeHtml(v)}</td>
-    </tr>`
-    )
-    .join("");
+/**
+ * Plain text version of the email: hero, highlights, top 3 opportunities, assumptions, disclaimer.
+ * No tables; simple bullet lists.
+ */
+export function buildEmailText(analysis: Json): string {
+  const hasBiz =
+    get(analysis, "intake.business.has_business") ??
+    get(analysis, "business.has_business") ??
+    get(analysis, "business.hasBusiness");
+  const bizType =
+    asString(get(analysis, "intake.business.type")) ?? asString(get(analysis, "business.type"));
 
-  return `
-  <h3 style="margin:18px 0 8px 0;">${escapeHtml(title)}</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse; width:100%; max-width:760px;">
-    ${trs}
-  </table>
-  `.trim();
+  const strategies =
+    get(analysis, "strategies") ??
+    get(analysis, "strategy_impacts") ??
+    get(analysis, "impacts") ??
+    null;
+  const baselineTax =
+    safeNumber(get(analysis, "baseline.total_tax")) ??
+    safeNumber(get(analysis, "baseline.totalTax")) ??
+    safeNumber(get(analysis, "baseline.total")) ??
+    null;
+  const afterTax =
+    safeNumber(get(analysis, "after.total_tax")) ??
+    safeNumber(get(analysis, "after.totalTax")) ??
+    safeNumber(get(analysis, "result.total_tax")) ??
+    null;
+  const deltaRaw =
+    safeNumber(get(analysis, "delta.total_tax")) ??
+    safeNumber(get(analysis, "delta.tax")) ??
+    safeNumber(get(analysis, "savings.total_tax")) ??
+    null;
+  const delta = computeDelta({ baselineTax, afterTax, deltaRaw });
+
+  const firstName = inferName(analysis);
+  const strategyData = renderStrategiesAndTopOpportunities(strategies);
+
+  const lines: string[] = [];
+  lines.push("Good Fellow CFO LLC");
+  lines.push("Tax Planning Summary");
+  lines.push("");
+  lines.push(`Hi ${firstName},`);
+  lines.push("");
+
+  if (delta != null && delta < 0) {
+    lines.push(`Estimated annual tax savings: ${formatUsd0(Math.abs(delta))}`);
+  } else if (delta != null && delta > 0) {
+    lines.push(`Estimated annual tax increase: ${formatUsd0(delta)}`);
+  } else {
+    lines.push("Summary of your results.");
+  }
+  if (baselineTax != null && afterTax != null) {
+    lines.push(`Baseline tax: ${formatUsd(baselineTax)} → After strategies tax: ${formatUsd(afterTax)}`);
+  }
+  lines.push("");
+
+  lines.push("Highlights");
+  const topOppFirst = strategyData.topOpps[0];
+  if (topOppFirst) {
+    lines.push(`• Largest opportunity detected: ${topOppFirst.name} (~${formatUsd0(topOppFirst.savings)}).`);
+  }
+  const appliedFirst = strategyData.applied[0];
+  if (appliedFirst) {
+    lines.push(`• You already have ${appliedFirst.name} in place.`);
+  }
+  const hasRetirementField =
+    safeNumber(get(analysis, "intake.personal.k401_employee_contrib_ytd")) != null ||
+    safeNumber(get(analysis, "intake.personal.k401_employee_contrib")) != null ||
+    get(analysis, "intake.personal.retirement") != null;
+  if (hasBiz && !bizType) {
+    lines.push("• Confirm your entity type (LLC, S-Corp, etc.) for a refined estimate.");
+  } else if (!hasRetirementField) {
+    lines.push("• Confirm retirement contributions (401k, IRA) for a refined estimate.");
+  } else {
+    lines.push("• Confirm payroll, retirement, and expenses for a refined run.");
+  }
+  lines.push("");
+
+  lines.push("Top Opportunities (top 3)");
+  for (const opp of strategyData.topOpps.slice(0, 3)) {
+    lines.push(`• ${opp.name}: ~${formatUsd0(opp.savings)} estimated savings`);
+  }
+  if (strategyData.topOpps.length === 0) {
+    lines.push("• No large potential savings items detected in the payload.");
+  }
+  lines.push("");
+
+  lines.push("Assumptions");
+  if (baselineTax != null || afterTax != null) {
+    if (baselineTax != null) lines.push(`• Baseline total tax: ${formatUsd(baselineTax)}`);
+    if (afterTax != null) lines.push(`• After strategies total tax: ${formatUsd(afterTax)}`);
+  } else {
+    lines.push("• Figures are from the payload; no numbers recomputed.");
+  }
+  lines.push("");
+
+  lines.push("Recommended next step");
+  lines.push("");
+  lines.push("If you'd like to walk through this plan in detail and see which strategies make sense for you,");
+  lines.push("just reply to this email and we'll set up a time to chat.");
+  lines.push("");
+  lines.push("This email is generated automatically. Figures are shown only if present in the payload; no numbers are recomputed.");
+
+  return lines.join("\n");
 }
 
 function parseStrategies(strategies: any): any[] {
@@ -259,12 +415,10 @@ function parseStrategies(strategies: any): any[] {
   return list.filter(Boolean);
 }
 
-function extractStrategyRow(s: any): {
-  id: string;
-  name: string;
-  status: string;
-  delta: number | null;
-} {
+type StrategyRow = { id: string; name: string; status: string; delta: number | null };
+type TopOpp = StrategyRow & { savings: number };
+
+function extractStrategyRow(s: any): StrategyRow {
   const id = asString(s.id) ?? asString(s.strategy_id) ?? asString(s.strategyId) ?? "—";
   const name = asString(s.name) ?? asString(s.title) ?? id;
 
@@ -281,9 +435,18 @@ function extractStrategyRow(s: any): {
   return { id, name, status, delta };
 }
 
-function renderStrategiesAndTopOpportunities(strategies: any): string {
+interface StrategyBlockResult {
+  html: string;
+  topOpps: TopOpp[];
+  applied: StrategyRow[];
+  potential: StrategyRow[];
+  other: StrategyRow[];
+}
+
+function renderStrategiesAndTopOpportunities(strategies: any): StrategyBlockResult {
+  const empty: StrategyBlockResult = { html: "", topOpps: [], applied: [], potential: [], other: [] };
   const list = parseStrategies(strategies);
-  if (!list.length) return "";
+  if (!list.length) return empty;
 
   const rows = list.map(extractStrategyRow);
 
@@ -299,11 +462,10 @@ function renderStrategiesAndTopOpportunities(strategies: any): string {
     .map((r) => ({
       ...r,
       savings: r.delta! < 0 ? Math.abs(r.delta!) : 0,
-      increase: r.delta! > 0 ? r.delta! : 0,
     }))
     .sort((a, b) => b.savings - a.savings);
 
-  const topOpps = oppCandidates.filter((x) => x.savings > 0).slice(0, 5);
+  const topOpps = oppCandidates.filter((x) => x.savings > 0).slice(0, 3);
 
   const topOppsHtml = topOpps.length
     ? renderTopOpportunities(topOpps)
@@ -316,14 +478,17 @@ function renderStrategiesAndTopOpportunities(strategies: any): string {
 
   const appliedTable = applied.length ? renderStrategyTable("Applied / Already In Use", applied) : "";
   const potentialTable = potential.length ? renderStrategyTable("Potential", potential) : "";
-  const otherTable = other.length ? renderStrategyTable("Other Strategy Results", other) : "";
+  const showOther = applied.length === 0 && potential.length === 0 && other.length > 0;
+  const otherTable = showOther && other.length ? renderStrategyTable("Other Strategy Results", other) : "";
 
-  return `
+  const html = `
     ${topOppsHtml}
     ${appliedTable}
     ${potentialTable}
     ${otherTable}
   `.trim();
+
+  return { html, topOpps, applied, potential, other };
 }
 
 function renderTopOpportunities(
