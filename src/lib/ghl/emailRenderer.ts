@@ -208,6 +208,11 @@ export function buildEmailHtml(analysis: Json): string {
     heroLine = `Estimated annual tax savings: ${formatUsd0(Math.abs(delta))}`;
   } else if (delta != null && delta > 0) {
     heroLine = `Estimated annual tax increase: ${formatUsd0(delta)}`;
+  } else if (delta === null) {
+    const heroTopOpp = strategyData.topOpps[0];
+    if (heroTopOpp) {
+      heroLine = `Top opportunity savings: ${formatUsd0(heroTopOpp.savings)}`;
+    }
   }
 
   // Results mini-row (baseline / after strategies)
@@ -343,7 +348,12 @@ export function buildEmailText(analysis: Json): string {
   } else if (delta != null && delta > 0) {
     lines.push(`Estimated annual tax increase: ${formatUsd0(delta)}`);
   } else {
-    lines.push("Summary of your results.");
+    const heroTopOpp = strategyData.topOpps[0];
+    if (heroTopOpp) {
+      lines.push(`Top opportunity savings: ${formatUsd0(heroTopOpp.savings)}`);
+    } else {
+      lines.push("Summary of your results.");
+    }
   }
   if (baselineTax != null && afterTax != null) {
     lines.push(`Baseline tax: ${formatUsd(baselineTax)} → After strategies tax: ${formatUsd(afterTax)}`);

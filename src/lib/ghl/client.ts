@@ -163,6 +163,7 @@ export class GhlClient {
   /**
    * Send an email via Conversations Messages API.
    *
+   * Sends both plain-text and HTML bodies when text is provided (multipart-friendly).
    * Critical details (learned empirically):
    * - GHL requires a non-empty plain-text `message`
    * - HTML alone is NOT sufficient
@@ -172,7 +173,14 @@ export class GhlClient {
     contactId: string;
     subject: string;
     html: string;
+    /** Optional plain-text body; when set, used for `message` instead of stripping HTML */
+    text?: string;
   }): Promise<Json> {
+    const plainBody =
+      typeof opts.text === "string" && opts.text.trim().length > 0
+        ? opts.text.trim()
+        : stripHtml(opts.html);
+
     const payload: Json = {
       locationId: this.locationId,
       contactId: opts.contactId,
@@ -183,10 +191,7 @@ export class GhlClient {
 
       subject: opts.subject,
 
-      // GHL validation requires this to be non-empty
-      message: stripHtml(opts.html),
-
-      // Still include HTML for actual rendering
+      message: plainBody,
       html: opts.html,
     };
 

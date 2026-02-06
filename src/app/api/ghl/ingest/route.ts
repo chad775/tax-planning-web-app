@@ -9,7 +9,7 @@ import {
   extractTagsFromGetContactResponse,
   type UpsertContactInput,
 } from "@/lib/ghl/client";
-import { buildEmailHtml, buildEmailSubject } from "@/lib/ghl/emailRenderer";
+import { buildEmailHtml, buildEmailSubject, buildEmailText } from "@/lib/ghl/emailRenderer";
 import { setPrefill } from "@/lib/session/prefillStore";
 
 export const runtime = "nodejs";
@@ -301,13 +301,18 @@ export async function POST(req: Request) {
        ------------------------------------------------- */
     const subject = buildEmailSubject(email, analysis);
     const html = buildEmailHtml(analysis);
+    const text = buildEmailText(analysis);
 
     /* -------------------------------------------------
        4) Send email
        ------------------------------------------------- */
     try {
-      await ghl.sendEmailToContact({ contactId, subject, html });
-      console.log("[GHL] Email sent to contact:", contactId, { forceResend });
+      await ghl.sendEmailToContact({ contactId, subject, html, text });
+      console.log("[GHL] Email sent", {
+        contactId,
+        forceResend,
+        bodyFields: { htmlLength: html.length, textLength: text.length },
+      });
     } catch (e) {
       console.error("[GHL] sendEmailToContact failed:", e);
       if (e instanceof GhlApiError) {
