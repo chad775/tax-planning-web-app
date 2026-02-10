@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Header } from "./components/Header";
+import { MetaPixel } from "@/components/MetaPixel";
 import { colors, typography } from "@/lib/ui/designSystem";
 
 export const metadata = {
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           lineHeight: typography.lineHeight.normal,
         }}
       >
+        <MetaPixel />
         <Header />
         {children}
       </body>

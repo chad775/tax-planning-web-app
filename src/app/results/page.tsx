@@ -65,6 +65,7 @@ export default function ResultsPage() {
   const router = useRouter();
   const [raw, setRaw] = useState<JsonRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const taxPlanEventFired = React.useRef(false);
 
   useEffect(() => {
     try {
@@ -79,6 +80,13 @@ export default function ResultsPage() {
       setError("Unable to read analysis. Please re-run intake.");
     }
   }, []);
+
+  useEffect(() => {
+    if (taxPlanEventFired.current || !raw) return;
+    if (typeof window === "undefined" || typeof window.fbq !== "function") return;
+    taxPlanEventFired.current = true;
+    window.fbq("trackCustom", "TaxPlanCompleted");
+  }, [raw]);
 
   const vm = useMemo(() => buildViewModel(raw), [raw]);
 
