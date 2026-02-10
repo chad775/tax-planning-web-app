@@ -38,14 +38,31 @@ export function MetaPixel() {
 
   const handleScriptLoad = () => {
     if (typeof window === "undefined") return;
-    if (typeof window.fbq === "function") {
-      window.fbq("init", pixelId);
-      window.fbq("track", "PageView");
-      setScriptReady(true);
-      document.documentElement.setAttribute("data-meta-pixel", "loaded");
-    } else {
-      document.documentElement.setAttribute("data-meta-pixel", "script-no-fbq");
-    }
+
+    const tryInit = () => {
+      if (typeof window.fbq === "function") {
+        window.fbq("init", pixelId);
+        window.fbq("track", "PageView");
+        setScriptReady(true);
+        document.documentElement.setAttribute("data-meta-pixel", "loaded");
+        return true;
+      }
+      return false;
+    };
+
+    if (tryInit()) return;
+
+    // Script load event can fire before fbq is defined; retry a few times
+    const attempts = [0, 50, 150, 350];
+    attempts.forEach((delay) => {
+      setTimeout(() => {
+        if (document.documentElement.getAttribute("data-meta-pixel") === "loaded") return;
+        if (tryInit()) return;
+        if (delay === 350) {
+          document.documentElement.setAttribute("data-meta-pixel", "script-no-fbq");
+        }
+      }, delay);
+    });
   };
 
   // Fire PageView on client-side route changes only (initial load already fired in onLoad)
