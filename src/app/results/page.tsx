@@ -238,39 +238,6 @@ export default function ResultsPage() {
           );
         })()}
 
-      {/* Actions */}
-      <section style={{ ...styles.card, marginBottom: spacing.lg }}>
-        <h2 style={styles.heading2}>Next Steps</h2>
-        <div style={{ display: "flex", gap: spacing.md, flexWrap: "wrap" }}>
-          <button 
-            onClick={() => router.push("/intake")} 
-            style={styles.button}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = colors.primaryDark;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = colors.primary;
-            }}
-          >
-            Run Analysis Again
-          </button>
-          <button 
-            onClick={() => copyToClipboard(JSON.stringify(raw, null, 2))} 
-            style={styles.buttonSecondary}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = colors.background;
-              e.currentTarget.style.borderColor = colors.primary;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = colors.surface;
-              e.currentTarget.style.borderColor = colors.borderDark;
-            }}
-          >
-            Copy Raw JSON
-          </button>
-        </div>
-      </section>
-
       {/* CTA Section */}
       <section
         style={{
