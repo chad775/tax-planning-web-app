@@ -6,6 +6,16 @@ import { useEffect, useRef, useState } from "react";
 const META_PIXEL_SCRIPT_URL =
   "https://connect.facebook.net/en_US/fbevents.js";
 
+// Stub type for Meta's fbq queue (callMethod/queue added after creation)
+type FbqStub = {
+  (...args: unknown[]): void;
+  callMethod?: (...args: unknown[]) => void;
+  queue: unknown[];
+  push?: unknown;
+  loaded?: boolean;
+  version?: string;
+};
+
 export function MetaPixel() {
   const pixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID;
   const [scriptReady, setScriptReady] = useState(false);
@@ -36,11 +46,12 @@ export function MetaPixel() {
     const v = META_PIXEL_SCRIPT_URL;
     // Stub from Meta: creates fbq immediately and loads fbevents.js
     if (f.fbq) return;
-    const n = (f.fbq = function () {
-      n.callMethod
-        ? n.callMethod.apply(n, arguments)
-        : n.queue.push(arguments);
-    });
+    const n: FbqStub = (f.fbq = function () {
+      const stub = n as FbqStub;
+      stub.callMethod
+        ? stub.callMethod.apply(stub, arguments as unknown as unknown[])
+        : stub.queue.push(arguments);
+    }) as FbqStub;
     if (!f._fbq) f._fbq = n;
     n.push = n;
     n.loaded = true;
