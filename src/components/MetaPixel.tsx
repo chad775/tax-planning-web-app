@@ -13,31 +13,38 @@ export function MetaPixel() {
   const searchParams = useSearchParams();
   const prevRouteRef = useRef<string | null>(null);
 
-  // Dev: log whether pixel ID is present on client (runs once on mount)
-  useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      const present = Boolean(pixelId && String(pixelId).trim());
-      console.log(
-        "[Meta Pixel] NEXT_PUBLIC_META_PIXEL_ID on client:",
-        present ? "present" : "MISSING"
-      );
-    }
-  }, [pixelId]);
+  const hasPixelId = Boolean(pixelId && String(pixelId).trim());
 
-  if (!pixelId || String(pixelId).trim() === "") {
-    if (process.env.NODE_ENV === "development") {
+  // Diagnostic: log whether pixel ID is present on client (dev + prod so Vercel can be verified)
+  useEffect(() => {
+    if (hasPixelId) {
+      console.log("[Meta Pixel] NEXT_PUBLIC_META_PIXEL_ID on client: present");
+    } else {
       console.warn(
-        "[Meta Pixel] NEXT_PUBLIC_META_PIXEL_ID is missing. Pixel will not load."
+        "[Meta Pixel] NEXT_PUBLIC_META_PIXEL_ID on client: MISSING. Set the env var in Vercel and redeploy (build-time variable)."
       );
     }
-    return null;
+  }, [hasPixelId]);
+
+  if (!hasPixelId) {
+    return (
+      <span
+        data-meta-pixel="id-missing"
+        aria-hidden
+        style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+      />
+    );
   }
 
   const handleScriptLoad = () => {
-    if (typeof window !== "undefined" && typeof window.fbq === "function") {
+    if (typeof window === "undefined") return;
+    if (typeof window.fbq === "function") {
       window.fbq("init", pixelId);
       window.fbq("track", "PageView");
       setScriptReady(true);
+      document.documentElement.setAttribute("data-meta-pixel", "loaded");
+    } else {
+      document.documentElement.setAttribute("data-meta-pixel", "script-no-fbq");
     }
   };
 
