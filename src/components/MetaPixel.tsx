@@ -63,8 +63,10 @@ export function MetaPixel() {
     const s = b.getElementsByTagName(e)[0];
     if (s?.parentNode) s.parentNode.insertBefore(t, s);
 
-    window.fbq("init", pixelId);
-    window.fbq("track", "PageView");
+    if (typeof window.fbq === "function") {
+      window.fbq("init", pixelId);
+      window.fbq("track", "PageView");
+    }
     setScriptReady(true);
     document.documentElement.setAttribute("data-meta-pixel", "loaded");
   }, [hasPixelId, pixelId]);
