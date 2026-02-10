@@ -363,45 +363,60 @@ export async function POST(req: Request) {
     /* -------------------------------------------------
        3) Build email
        ------------------------------------------------- */
+    // Merge contact fields (e.g. firstName from GHL/intake) into payload so the email greeting can use them
+    const payloadForEmail =
+      isPlainObject(analysisForEmail) && (firstName || email || phone)
+        ? {
+            ...analysisForEmail,
+            contact: {
+              ...(typeof (analysisForEmail as Record<string, unknown>).contact === "object" &&
+              (analysisForEmail as Record<string, unknown>).contact !== null
+                ? (analysisForEmail as Record<string, unknown>).contact as Record<string, unknown>
+                : {}),
+              ...contactFields,
+            },
+          }
+        : (analysisForEmail as Record<string, any>);
+
     console.log("EMAIL_ANALYSIS_PICK", {
       pickedPath: best.path,
       pickedScore: best.score,
       topLevelKeys:
-        analysisForEmail && typeof analysisForEmail === "object"
-          ? Object.keys(analysisForEmail).slice(0, 40)
+        payloadForEmail && typeof payloadForEmail === "object"
+          ? Object.keys(payloadForEmail).slice(0, 40)
           : [],
-      hasBaseline: !!(analysisForEmail as Record<string, unknown>)?.baseline,
+      hasBaseline: !!(payloadForEmail as Record<string, unknown>)?.baseline,
       hasAfter: !!(
-        (analysisForEmail as Record<string, unknown>)?.after ||
-        (analysisForEmail as Record<string, unknown>)?.revised ||
-        (analysisForEmail as Record<string, unknown>)?.scenario ||
-        (analysisForEmail as Record<string, unknown>)?.result
+        (payloadForEmail as Record<string, unknown>)?.after ||
+        (payloadForEmail as Record<string, unknown>)?.revised ||
+        (payloadForEmail as Record<string, unknown>)?.scenario ||
+        (payloadForEmail as Record<string, unknown>)?.result
       ),
       hasStrategies: !!(
-        (analysisForEmail as Record<string, unknown>)?.strategies ||
-        (analysisForEmail as Record<string, unknown>)?.strategy_impacts ||
-        (analysisForEmail as Record<string, unknown>)?.impacts
+        (payloadForEmail as Record<string, unknown>)?.strategies ||
+        (payloadForEmail as Record<string, unknown>)?.strategy_impacts ||
+        (payloadForEmail as Record<string, unknown>)?.impacts
       ),
-      strategiesType: Array.isArray((analysisForEmail as Record<string, unknown>)?.strategies)
+      strategiesType: Array.isArray((payloadForEmail as Record<string, unknown>)?.strategies)
         ? "array"
-        : typeof (analysisForEmail as Record<string, unknown>)?.strategies,
+        : typeof (payloadForEmail as Record<string, unknown>)?.strategies,
       strategiesLen: (() => {
-        const s = (analysisForEmail as Record<string, unknown>)?.strategies;
+        const s = (payloadForEmail as Record<string, unknown>)?.strategies;
         return Array.isArray(s) ? s.length : null;
       })(),
-      baselineKeys: (analysisForEmail as Record<string, unknown>)?.baseline
-        ? Object.keys((analysisForEmail as Record<string, unknown>).baseline as object).slice(0, 25)
+      baselineKeys: (payloadForEmail as Record<string, unknown>)?.baseline
+        ? Object.keys((payloadForEmail as Record<string, unknown>).baseline as object).slice(0, 25)
         : [],
-      afterKeys: (analysisForEmail as Record<string, unknown>)?.after
-        ? Object.keys((analysisForEmail as Record<string, unknown>).after as object).slice(0, 25)
-        : (analysisForEmail as Record<string, unknown>)?.revised
-          ? Object.keys((analysisForEmail as Record<string, unknown>).revised as object).slice(0, 25)
+      afterKeys: (payloadForEmail as Record<string, unknown>)?.after
+        ? Object.keys((payloadForEmail as Record<string, unknown>).after as object).slice(0, 25)
+        : (payloadForEmail as Record<string, unknown>)?.revised
+          ? Object.keys((payloadForEmail as Record<string, unknown>).revised as object).slice(0, 25)
           : [],
     });
 
-    const subject = buildEmailSubject(email, analysisForEmail as Record<string, any>);
-    const html = buildEmailHtml(analysisForEmail as Record<string, any>);
-    const text = buildEmailText(analysisForEmail as Record<string, any>);
+    const subject = buildEmailSubject(email, payloadForEmail);
+    const html = buildEmailHtml(payloadForEmail);
+    const text = buildEmailText(payloadForEmail);
     console.log("EMAIL_BODY_LENGTHS", { subjectLen: subject.length, htmlLen: html.length, textLen: text.length });
 
     /* -------------------------------------------------

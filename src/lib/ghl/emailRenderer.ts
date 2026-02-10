@@ -117,15 +117,16 @@ function computeDelta(bestEffort: BestEffortTax): number | null {
   return deltaRaw ?? null;
 }
 
-/** First name from intake/contact; "there" if missing. */
+/** First name from contact, intake, or personal; "there" if missing. */
 function inferName(analysis: Json): string {
   const name =
-    asString(get(analysis, "intake.personal.first_name")) ??
-    asString(get(analysis, "intake.personal.firstName")) ??
     asString(get(analysis, "contact.firstName")) ??
     asString(get(analysis, "contact.first_name")) ??
+    asString(get(analysis, "intake.personal.first_name")) ??
+    asString(get(analysis, "intake.personal.firstName")) ??
     asString(get(analysis, "personal.first_name")) ??
-    asString(get(analysis, "personal.firstName"));
+    asString(get(analysis, "personal.firstName")) ??
+    asString(get(analysis, "firstName"));
   return name && name.trim().length > 0 ? name.trim() : "there";
 }
 
@@ -407,7 +408,7 @@ export function buildEmailHtml(analysis: Json): string {
   return `
 <div style="font-family: Arial, Helvetica, sans-serif; line-height: 1.45; color:#111;">
   <div style="max-width: 760px; margin: 0 auto; padding: 10px 0;">
-    <p style="margin:0 0 4px 0; font-size:14px; color:#555;">Good Fellow CFO LLC</p>
+    <p style="margin:0 0 4px 0; font-size:14px; color:#555;">Boyd Group Services</p>
     <h2 style="margin:0 0 18px 0;">Tax Planning Summary</h2>
 
     <p style="margin:0 0 14px 0; color:#333;">Hi ${escapeHtml(firstName)},</p>
@@ -498,7 +499,7 @@ export function buildEmailText(analysis: Json): string {
     get(analysis, "intake.personal.retirement") != null;
 
   const lines: string[] = [];
-  lines.push("Good Fellow CFO LLC");
+  lines.push("Boyd Group Services");
   lines.push("Tax Planning Summary");
   lines.push("");
   lines.push(`Hi ${firstName},`);

@@ -270,6 +270,95 @@ export default function ResultsPage() {
           </button>
         </div>
       </section>
+
+      {/* CTA Section */}
+      <section
+        style={{
+          marginTop: spacing.xl,
+          marginBottom: spacing.xl,
+          paddingTop: spacing.xl,
+          borderTop: `2px solid ${colors.border}`,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: "800px",
+            margin: "0 auto",
+            textAlign: "center",
+          }}
+        >
+          <p
+            style={{
+              ...styles.bodyText,
+              fontSize: typography.fontSize.base,
+              lineHeight: typography.lineHeight.relaxed,
+              marginBottom: spacing.xl,
+              color: colors.textSecondary,
+            }}
+          >
+            Your tax savings opportunities are only as good as the strategy behind them.
+            Meet with a Good Fellow CFO advisor to walk through these results, pressure-test the assumptions, and map out the next steps to actually implement the savings.
+          </p>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: spacing.md,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <a
+              href="https://healthcheck.boydgroupservices.com/start-schedulepage"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                ...styles.button,
+                textDecoration: "none",
+                display: "inline-block",
+                textAlign: "center",
+                flex: "1 1 auto",
+                minWidth: "240px",
+                maxWidth: "300px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = colors.primaryDark;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = colors.primary;
+              }}
+            >
+              Schedule Your Strategy Call
+            </a>
+
+            <button
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.print();
+                }
+              }}
+              style={{
+                ...styles.buttonSecondary,
+                flex: "1 1 auto",
+                minWidth: "240px",
+                maxWidth: "300px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = colors.background;
+                e.currentTarget.style.borderColor = colors.primary;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = colors.surface;
+                e.currentTarget.style.borderColor = colors.borderDark;
+              }}
+            >
+              Print This Analysis
+            </button>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
