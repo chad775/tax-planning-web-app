@@ -290,7 +290,7 @@ export default function ResultsPage() {
           <p
             style={{
               ...styles.bodyText,
-              fontSize: typography.fontSize.base,
+              fontSize: typography.fontSize.lg,
               lineHeight: typography.lineHeight.relaxed,
               marginBottom: spacing.xl,
               color: colors.textSecondary,
@@ -303,8 +303,7 @@ export default function ResultsPage() {
           <div
             style={{
               display: "flex",
-              flexDirection: "row",
-              flexWrap: "wrap",
+              flexDirection: "column",
               gap: spacing.md,
               justifyContent: "center",
               alignItems: "center",
@@ -319,13 +318,13 @@ export default function ResultsPage() {
                 textDecoration: "none",
                 display: "inline-block",
                 textAlign: "center",
-                flex: "1 1 auto",
-                minWidth: "240px",
-                maxWidth: "300px",
+                fontSize: typography.fontSize["2xl"],
+                padding: `${spacing.lg} ${spacing["2xl"]}`,
+                minWidth: "400px",
                 background: "#36a9a2",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#2d8f88";
+                e.currentTarget.style.background = "#2d8a84";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "#36a9a2";
@@ -342,9 +341,7 @@ export default function ResultsPage() {
               }}
               style={{
                 ...styles.buttonSecondary,
-                flex: "1 1 auto",
-                minWidth: "240px",
-                maxWidth: "300px",
+                textAlign: "center",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = colors.background;
