@@ -61,7 +61,7 @@ export function MetaPixel() {
     t.async = true;
     t.src = v;
     const s = b.getElementsByTagName(e)[0];
-    s.parentNode?.insertBefore(t, s);
+    if (s?.parentNode) s.parentNode.insertBefore(t, s);
 
     window.fbq("init", pixelId);
     window.fbq("track", "PageView");
