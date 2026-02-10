@@ -322,15 +322,16 @@ export default function ResultsPage() {
                 flex: "1 1 auto",
                 minWidth: "240px",
                 maxWidth: "300px",
+                background: "#36a9a2",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = colors.primaryDark;
+                e.currentTarget.style.background = "#2d8f88";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = colors.primary;
+                e.currentTarget.style.background = "#36a9a2";
               }}
             >
-              Schedule Your Strategy Call
+              Schedule Your Free Call
             </a>
 
             <button
