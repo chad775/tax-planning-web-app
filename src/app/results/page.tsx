@@ -297,7 +297,7 @@ export default function ResultsPage() {
             }}
           >
             Your tax savings opportunities are only as good as the strategy behind them.
-            Meet with a Good Fellow CFO advisor to walk through these results, pressure-test the assumptions, and map out the next steps to actually implement the savings.
+            Meet with a Boyd Group Services advisor to walk through these results, pressure-test the assumptions, and map out the next steps to actually implement the savings.
           </p>
 
           <div
