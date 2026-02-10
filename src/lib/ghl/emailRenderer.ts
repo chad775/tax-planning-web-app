@@ -380,13 +380,10 @@ export function buildEmailHtml(analysis: Json): string {
         })()
       : "";
 
-  // CTA: Next step (advisor tone, outline button)
+  // CTA: Next step (advisor tone)
   const ctaBlock = `
     <h3 style="margin:18px 0 8px 0;">Next step</h3>
-    <p style="margin:0 0 14px 0; color:#333;">If you'd like to review this plan in detail and see which strategies make sense for you, just reply to this email and we'll set up a time to chat. We'll confirm assumptions, answer questions, and outline next steps.</p>
-    <p style="margin:0 0 18px 0;">
-      <a href="mailto:" style="display:inline-block; padding:10px 16px; border:1px solid #111; color:#111; text-decoration:none; border-radius:8px; font-weight:bold;">Reply to set up a time</a>
-    </p>
+    <p style="margin:0 0 14px 0; color:#333;">If you'd like to review this plan in detail and see which strategies make sense for you, just reply to this email and we'll set up a time to chat. We'll confirm assumptions, answer questions, and outline next steps. If it's easier, you can <a href="https://healthcheck.boydgroupservices.com/start-schedulepage" style="color:#36a9a2; text-decoration:underline;">get on our calendar HERE</a> to see when a team member has their next availability.</p>
   `.trim();
 
   const disclaimer =
@@ -564,7 +561,7 @@ export function buildEmailText(analysis: Json): string {
   lines.push("Next step");
   lines.push("");
   lines.push(
-    "If you'd like to review this plan in detail and see which strategies make sense for you, just reply to this email and we'll set up a time to chat. We'll confirm assumptions, answer questions, and outline next steps."
+    "If you'd like to review this plan in detail and see which strategies make sense for you, just reply to this email and we'll set up a time to chat. We'll confirm assumptions, answer questions, and outline next steps. If it's easier, you can get on our calendar HERE (https://healthcheck.boydgroupservices.com/start-schedulepage) to see when a team member has their next availability."
   );
   lines.push("");
   lines.push(

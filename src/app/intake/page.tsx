@@ -385,7 +385,7 @@ router.push("/results");
                 }}
                 style={{ width: "18px", height: "18px", cursor: "pointer" }}
               />
-              <span style={{ fontSize: typography.fontSize.base, color: colors.textPrimary }}>Has a business</span>
+              <span style={{ fontSize: typography.fontSize.base, color: colors.textPrimary }}>I have a business</span>
             </label>
 
             <div style={grid2Style}>
