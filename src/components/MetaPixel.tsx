@@ -1,10 +1,10 @@
 "use client";
 
-import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-const META_PIXEL_SCRIPT = "https://connect.facebook.net/en_US/fbevents.js";
+const META_PIXEL_SCRIPT_URL =
+  "https://connect.facebook.net/en_US/fbevents.js";
 
 export function MetaPixel() {
   const pixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID;
@@ -15,7 +15,7 @@ export function MetaPixel() {
 
   const hasPixelId = Boolean(pixelId && String(pixelId).trim());
 
-  // Diagnostic: log whether pixel ID is present on client (dev + prod so Vercel can be verified)
+  // Diagnostic: log whether pixel ID is present on client (dev + prod)
   useEffect(() => {
     if (hasPixelId) {
       console.log("[Meta Pixel] NEXT_PUBLIC_META_PIXEL_ID on client: present");
@@ -26,46 +26,39 @@ export function MetaPixel() {
     }
   }, [hasPixelId]);
 
-  if (!hasPixelId) {
-    return (
-      <span
-        data-meta-pixel="id-missing"
-        aria-hidden
-        style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
-      />
-    );
-  }
+  // Use Facebook's official snippet: stub creates fbq and loads script, then we init/track (queued until script runs)
+  useEffect(() => {
+    if (!hasPixelId || !pixelId || typeof window === "undefined") return;
 
-  const handleScriptLoad = () => {
-    if (typeof window === "undefined") return;
-
-    const tryInit = () => {
-      if (typeof window.fbq === "function") {
-        window.fbq("init", pixelId);
-        window.fbq("track", "PageView");
-        setScriptReady(true);
-        document.documentElement.setAttribute("data-meta-pixel", "loaded");
-        return true;
-      }
-      return false;
-    };
-
-    if (tryInit()) return;
-
-    // Script load event can fire before fbq is defined; retry a few times
-    const attempts = [0, 50, 150, 350];
-    attempts.forEach((delay) => {
-      setTimeout(() => {
-        if (document.documentElement.getAttribute("data-meta-pixel") === "loaded") return;
-        if (tryInit()) return;
-        if (delay === 350) {
-          document.documentElement.setAttribute("data-meta-pixel", "script-no-fbq");
-        }
-      }, delay);
+    const f = window;
+    const b = document;
+    const e = "script";
+    const v = META_PIXEL_SCRIPT_URL;
+    // Stub from Meta: creates fbq immediately and loads fbevents.js
+    if (f.fbq) return;
+    const n = (f.fbq = function () {
+      n.callMethod
+        ? n.callMethod.apply(n, arguments)
+        : n.queue.push(arguments);
     });
-  };
+    if (!f._fbq) f._fbq = n;
+    n.push = n;
+    n.loaded = true;
+    n.version = "2.0";
+    n.queue = [];
+    const t = b.createElement(e);
+    t.async = true;
+    t.src = v;
+    const s = b.getElementsByTagName(e)[0];
+    s.parentNode?.insertBefore(t, s);
 
-  // Fire PageView on client-side route changes only (initial load already fired in onLoad)
+    window.fbq("init", pixelId);
+    window.fbq("track", "PageView");
+    setScriptReady(true);
+    document.documentElement.setAttribute("data-meta-pixel", "loaded");
+  }, [hasPixelId, pixelId]);
+
+  // Fire PageView on client-side route changes (initial load already fired above)
   const searchString = searchParams?.toString() ?? "";
   useEffect(() => {
     if (!scriptReady || typeof window.fbq !== "function") return;
@@ -80,12 +73,27 @@ export function MetaPixel() {
     }
   }, [scriptReady, pathname, searchString]);
 
+  if (!hasPixelId) {
+    return (
+      <span
+        data-meta-pixel="id-missing"
+        aria-hidden
+        style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+      />
+    );
+  }
+
   return (
-    <Script
-      id="meta-pixel"
-      src={META_PIXEL_SCRIPT}
-      strategy="afterInteractive"
-      onLoad={handleScriptLoad}
-    />
+    <>
+      <noscript>
+        <img
+          height={1}
+          width={1}
+          style={{ display: "none" }}
+          src={`https://www.facebook.com/tr?id=${pixelId}&ev=PageView&noscript=1`}
+          alt=""
+        />
+      </noscript>
+    </>
   );
 }
