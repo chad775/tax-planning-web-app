@@ -120,12 +120,20 @@ function toFederalStatus(status: NormalizedIntake2025["personal"]["filing_status
   }
 }
 
-/**
- * If your StateFilingStatus2025 differs from the contract enum,
- * THIS is the only place you should change it.
- */
-function toStateStatus(
+/** Map intake filing_status (e.g. SINGLE) to state engine keys (e.g. single). */
+export function toStateStatus(
   status: NormalizedIntake2025["personal"]["filing_status"],
 ): StateFilingStatus2025 {
-  return status as unknown as StateFilingStatus2025;
+  switch (status) {
+    case "SINGLE":
+      return "single";
+    case "MARRIED_FILING_JOINTLY":
+      return "mfj";
+    case "MARRIED_FILING_SEPARATELY":
+      return "mfs";
+    case "HEAD_OF_HOUSEHOLD":
+      return "hoh";
+    default:
+      return "single";
+  }
 }

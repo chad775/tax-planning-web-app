@@ -11,7 +11,7 @@ import {
   type OpenAIAnalysisResponse,
 } from "../../../lib/openai/schema";
 
-import { runBaselineTaxEngine } from "../../../lib/tax/baselineEngine";
+import { runBaselineTaxEngine, toStateStatus } from "../../../lib/tax/baselineEngine";
 import { evaluateStrategies } from "../../../lib/strategies/evaluator";
 import { runImpactEngine } from "../../../lib/strategies/impactEngine";
 
@@ -258,8 +258,8 @@ const stateCode: StateCode = stateCodeRaw;
   const ctcUnused = roundToCents(fed.ctcUnused ?? 0);
   const federalTax = roundToCents(fed.incomeTaxAfterCTC ?? incomeTaxBeforeCredits);
 
-  // State (still uses taxable income proxy)
-  const stateStatus = params.filingStatus as any;
+  // State (use taxable income as proxy; filing status must be state-engine format: single | mfj | mfs | hoh)
+  const stateStatus = toStateStatus(params.filingStatus);
   const stAny: any = computeStateIncomeTax2025({
     taxYear: 2025,
     state: stateCode,
