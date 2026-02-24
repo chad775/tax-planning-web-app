@@ -84,6 +84,11 @@ export default function ResultsPage() {
   useEffect(() => {
     if (taxPlanEventFired.current || !raw) return;
     if (typeof window === "undefined" || typeof window.fbq !== "function") return;
+    const requestIdOrPath =
+      asString(raw["request_id"]) ?? asString(raw["requestId"]) ?? window.location.pathname;
+    const storageKey = `meta_pixel_tax_plan_${requestIdOrPath}`;
+    if (sessionStorage.getItem(storageKey)) return;
+    sessionStorage.setItem(storageKey, "1");
     taxPlanEventFired.current = true;
     window.fbq("trackCustom", "TaxPlanCompleted");
   }, [raw]);
@@ -727,12 +732,18 @@ function normalizeBreakdown(v: JsonRecord | null): TaxBreakdown | null {
       tax: asNumber(state["tax"]) ?? 0,
       taxable_base_proxy: asNumber(state["taxable_base_proxy"]) ?? 0,
     },
-    totals: {
-      federalTax: asNumber(totals["federalTax"]) ?? 0,
-      stateTax: asNumber(totals["stateTax"]) ?? 0,
-      payrollTax: asNumber(totals["payrollTax"]) ?? 0,
-      totalTax: asNumber(totals["totalTax"]) ?? 0,
-    },
+    totals: (() => {
+      const federalTax = asNumber(totals["federalTax"]) ?? asNumber(totals["federal_tax"]) ?? 0;
+      const stateTax = asNumber(totals["stateTax"]) ?? asNumber(totals["state_tax"]) ?? 0;
+      const payrollTax = asNumber(totals["payrollTax"]) ?? asNumber(totals["payroll_tax"]) ?? 0;
+      const totalTax = asNumber(totals["totalTax"]) ?? asNumber(totals["total_tax"]) ?? 0;
+      // If totalTax is 0 but components exist, derive total (handles missing or mis-keyed totalTax)
+      const derived =
+        totalTax === 0 && (federalTax !== 0 || stateTax !== 0 || payrollTax !== 0)
+          ? federalTax + stateTax + payrollTax
+          : totalTax;
+      return { federalTax, stateTax, payrollTax, totalTax: derived };
+    })(),
   };
 }
 
